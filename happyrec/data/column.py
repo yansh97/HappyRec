@@ -218,7 +218,7 @@ class ColType(Enum):
                     ret = series.astype(np.object_)
         return self.downcast(ret)
 
-    def to_str_array(self, series: pd.Series) -> pd.Series:
+    def to_str_series(self, series: pd.Series) -> pd.Series:
         """Convert the value of the column to a string series.
 
         :param value: The value of the column.
