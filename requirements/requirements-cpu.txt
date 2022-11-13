@@ -1,0 +1,22 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+-f https://data.pyg.org/whl/torch-1.12.0+cpu.html
+
+wheel
+tqdm
+rich
+
+numpy
+pandas
+
+torch>=1.12,<1.13
+
+torch-scatter
+torch-sparse
+torch-cluster
+torch-spline-conv
+torch-geometric
+
+jsonargparse[signatures]
+pytorch-lightning
+
+torchmetrics

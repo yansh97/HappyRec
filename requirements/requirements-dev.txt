@@ -1,0 +1,13 @@
+pre-commit
+
+flake8
+isort
+black
+
+ipykernel
+
+sphinx
+sphinx-rtd-theme
+sphinx-copybutton
+
+flit
