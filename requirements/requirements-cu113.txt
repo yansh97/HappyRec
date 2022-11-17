@@ -7,6 +7,8 @@ rich
 
 numpy
 pandas
+pyarrow
+polars
 
 torch>=1.12,<1.13
 
@@ -15,6 +17,9 @@ torch-sparse
 torch-cluster
 torch-spline-conv
 torch-geometric
+
+transformers
+datasets
 
 jsonargparse[signatures]
 pytorch-lightning

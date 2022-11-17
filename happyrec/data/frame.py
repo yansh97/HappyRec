@@ -1,90 +1,423 @@
-from collections.abc import Sequence
+from collections.abc import Iterator, Mapping, MutableMapping, Sequence
 from os import PathLike
-from typing import IO
+from typing import Any, SupportsIndex, overload
 
 import numpy as np
 import pandas as pd
 
-from ..config.constants import FIELD_SEP
-from ..utils.fileio import get_io_handle
-from .column import get_col_type
+from ..constants import FIELD_SEP
+from ..utils.type import is_typed_mapping, is_typed_sequence
+from .field import Field, FieldType, ItemType, ScalarType
 
 
-def downcast(frame: pd.DataFrame) -> pd.DataFrame:
-    """Downcast each column in the frame.
+class Frame(MutableMapping[str, Field]):
+    """Frame defines a container to store multiple fields containing the same number
+    of samples. Frame implements all the interfaces for a mutable mapping of strings
+    to fields, similar to ``dict[str, Field]``.
 
-    :param frame: The frame.
-    :return: The downcasted frame.
+    .. note::
+        Frame disables the ``__lt__``, ``__le__``, ``__eq__``, ``__ne__``,
+        ``__gt__``, ``__ge__``, ``__hash__`` interfaces, as the Frame class is not
+        frozen and comparable.
     """
-    ret = pd.DataFrame()
-    for name in frame.columns:
-        ret[name] = get_col_type(name).downcast(frame[name])
-    return ret
 
+    __slots__ = ["fields"]
 
-def validate(frame: pd.DataFrame) -> None:
-    """Validate the frame.
+    def __init__(self, fields: Mapping[str, Field]) -> None:
+        """Initialize the frame with a mapping of names to fields.
 
-    :param frame: The frame.
-    :raises ValueError: The frame must have at least one column.
-    :raises ValueError: Some columns have invalid values.
-    """
-    if len(frame.columns) == 0:
-        raise ValueError("The frame must have at least one column.")
-
-    for name in frame.columns:
-        if not get_col_type(name).check_value(frame[name]):
-            raise ValueError(f"The column {name} has invalid values.")
-
-
-def from_csv(file: str | PathLike | IO) -> pd.DataFrame:
-    """Load the frame from a CSV file.
-
-    :param file: The file path or file object.
-    :return: The frame.
-    """
-    str_frame = pd.read_csv(
-        file, sep=FIELD_SEP, header=0, index_col=False, dtype=np.str_
-    )
-    ret = pd.DataFrame()
-    for name in str_frame.columns:
-        ret[name] = get_col_type(name).from_str_series(str_frame[name])
-    return ret
-
-
-def to_csv(
-    frame: pd.DataFrame, file: str | PathLike | IO, buffer_len: int = 10000
-) -> None:
-    """Save the frame to a file in the CSV format.
-
-    :param file: The file path or file object.
-    :param buffer_len: The length of the buffer used to write the file.
-    :return: None.
-    """
-    total_rows = len(frame.index)
-    start_idx: int = 0
-    while start_idx < total_rows:
-        end_idx = min(start_idx + buffer_len, total_rows)
-        buffer_df = pd.DataFrame()
-        for name in frame.columns:
-            buffer_df[name] = get_col_type(name).to_str_series(
-                frame[name][start_idx:end_idx]
+        :param fields: The mapping of names to fields.
+        :raises TypeError: The parameter ``fields`` must be a mapping of strings to
+            fields.
+        :raises ValueError: Some fields in ``fields`` contain different number of
+            samples.
+        """
+        if not is_typed_mapping(fields, key_type=str, value_type=Field):
+            raise TypeError(
+                "The paramter `fields` is not a mapping of strings to fields."
             )
-        mode = "w" if start_idx == 0 else "a"
-        with get_io_handle(file, mode) as fout:
-            buffer_df.to_csv(fout.io, sep=FIELD_SEP, index=False, header=start_idx == 0)
-        start_idx = end_idx
+
+        field_len = len(next(iter(fields.values())))
+        for field in fields.values():
+            if len(field) != field_len:
+                raise ValueError(
+                    "Some fields in `fields` contain different number of samples."
+                )
+
+        self.fields: dict[str, Field] = dict(fields)
+        """The underlying data of the frame."""
+
+    # Object
+    def __repr__(self) -> str:
+        info = ["<Frame"]
+        for name, field in self.items():
+            info.append(f' "{name}"->{str(field)};')
+        info.append(">")
+        return "".join(info)
+
+    def __str__(self) -> str:
+        return (
+            self.to_string()
+            + f"\n[{self.num_samples} samples x {self.num_fields} fields]"
+        )
+
+    def __lt__(self, other: "Frame") -> bool:
+        raise NotImplementedError
+
+    def __le__(self, other: "Frame") -> bool:
+        raise NotImplementedError
+
+    def __eq__(self, __o: object) -> bool:
+        raise NotImplementedError
+
+    def __ne__(self, __o: object) -> bool:
+        raise NotImplementedError
+
+    def __gt__(self, __o: "Frame") -> bool:
+        raise NotImplementedError
+
+    def __ge__(self, __o: "Frame") -> bool:
+        raise NotImplementedError
+
+    def __hash__(self) -> int:
+        raise NotImplementedError
+
+    # Sized
+    def __len__(self) -> int:
+        return len(self.fields)
+
+    # Iterable
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.fields)
+
+    # Container
+    def __contains__(self, key: str) -> bool:
+        return key in self.fields
+
+    # Mapping
+    def __getitem__(self, key: str) -> Field:
+        """Get the field with the given name.
+
+        :param key: The name of the field.
+        :return: The field.
+        """
+        return self.fields[key]
+
+    # MutableMapping
+    def __setitem__(self, key: str, value: Field) -> None:
+        """Set the field with the given name.
+
+        :param key: The name of the field.
+        :param value: The field.
+        :raises TypeError: The parameter ``key`` must be a string.
+        :raises TypeError: The parameter ``value`` must be a field.
+        :raises ValueError: The parameter ``value`` contains different number of
+            samples.
+        """
+        if not isinstance(key, str):
+            raise TypeError("The parameter `key` must be a string.")
+        if not isinstance(value, Field):
+            raise TypeError("The parameter `value` must be a field.")
+        if self.num_fields > 0 and len(value) != self.num_samples:
+            raise ValueError(
+                "The parameter `value` contains different number of samples."
+            )
+        self.fields[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        """Delete the field with the given name.
+
+        :param key: The name of the field.
+        """
+        del self.fields[key]
+
+    # Frame
+    @property
+    def num_samples(self) -> int:
+        """Get the number of samples in the frame."""
+        if self.num_fields == 0:
+            return 0
+        return len(next(iter(self.values())))
+
+    @property
+    def loc_samples(self) -> "SampleLoc":
+        """Select samples from the frame.
+
+        ``.loc_samples[]`` is used to select samples of the frame. The allowed key
+        types are listed at :py:meth:`SampleLoc.__getitem__`.
+        """
+        return self.SampleLoc(self)
+
+    @property
+    def num_fields(self) -> int:
+        """The number of fields of the frame."""
+        return len(self)
+
+    @property
+    def loc_fields(self) -> "FieldLoc":
+        """Select fields of the frame.
+
+        ``.loc_fields[]`` is used to select columns of the frame. The allowed key
+        types are listed at :py:meth:`FieldLoc.__getitem__`.
+        """
+        return self.FieldLoc(self)
+
+    def describe(self) -> str:
+        """Get the description of the frame.
+
+        :return: The description of the frame.
+        """
+        desc_df = pd.DataFrame(
+            {
+                "name": list(self.keys()),
+                "scalar type": [
+                    field.ftype.scalar_type.value for field in self.values()
+                ],
+                "numpy dtype": [
+                    field.value.dtype.type.__name__ for field in self.values()
+                ],
+                "item type": [field.ftype.item_type.value for field in self.values()],
+                "shape": [str(field.shape) for field in self.values()],
+                "mean": [str(field.mean()) for field in self.values()],
+                "min": [str(field.min()) for field in self.values()],
+                "max": [str(field.max()) for field in self.values()],
+            }
+        )
+        return desc_df.to_string()
+
+    def validate(self) -> "Frame":
+        """Validate the frame.
+
+        :raises ValueError: Some fields contain different number of samples.
+        :raises ValueError: Some fields have invalid values.
+        :return: The validated frame itself.
+        """
+        for field in self.values():
+            if len(field) != self.num_samples:
+                raise ValueError("Some fields contain different number of samples.")
+            field.validate()
+        return self
+
+    def downcast(self) -> "Frame":
+        """Downcast each field to the smallest possible type.
+
+        :return: The downcasted frame itself.
+        """
+        for field in self.values():
+            field.downcast()
+        return self
+
+    def sort(self, name: str) -> "Frame":
+        """Sort the frame by one field with scalar item type.
+
+        :param name: The name of the field to sort by.
+        :raises ValueError: The field ``name`` does not exist.
+        :raises ValueError: The item type of the field is not scalar.
+        :return: The sorted frame itself.
+        """
+        if name not in self:
+            raise ValueError(f'Field "{name}" does not exist.')
+        if self[name].ftype.item_type != ItemType.SCALAR:
+            raise ValueError("The item type of the field is not scalar.")
+        indices = np.argsort(self[name].value, axis=0, kind="stable")
+        for field in self.values():
+            field.value = field.value[indices]
+        return self
+
+    def copy(self) -> "Frame":
+        """Copy the frame.
+
+        :return: The copied frame.
+        """
+        return Frame({name: field.copy() for name, field in self.items()})
+
+    def to_csv(self, path: str | PathLike) -> None:
+        """Save the frame to a CSV file.
+
+        :param path: The path to the CSV file.
+        """
+        str_df = pd.DataFrame()
+        for name, field in self.items():
+            name_and_type = _join_name_and_type(name, field)
+            str_df[name_and_type] = field._to_str_array()
+        str_df.to_csv(path, sep=FIELD_SEP, index=False, header=True)
+
+    @classmethod
+    def from_csv(cls, path: str | PathLike) -> "Frame":
+        """Load the frame from a CSV file.
+
+        :param path: The path to the CSV file.
+        :return: The loaded frame.
+        """
+        str_df = pd.read_csv(
+            path, sep=FIELD_SEP, header=0, index_col=False, dtype=np.str_
+        )
+        fields: dict[str, Field] = {}
+        for name_and_type in str_df.columns:
+            name, ftype = _split_name_and_type(name_and_type)
+            array = str_df[name_and_type].to_numpy()
+            fields[name] = Field._from_str_array(ftype, array)
+        return cls(fields)
+
+    def to_npz(self, path: str | PathLike) -> None:
+        """Save the frame to a NPZ file.
+
+        :param path: The path to the NPZ file.
+        """
+        array_dict: dict[str, np.ndarray] = {}
+        for name, field in self.items():
+            name_and_type = _join_name_and_type(name, field)
+            array_dict[name_and_type] = field.value
+        np.savez(path, **array_dict)
+
+    @classmethod
+    def from_npz(cls, path: str | PathLike) -> "Frame":
+        """Load the frame from a NPZ file.
+
+        :param path: The path to the NPZ file.
+        :return: The loaded frame.
+        """
+        fields: dict[str, Field] = {}
+        with np.load(path, allow_pickle=True) as npz:
+            for name_and_type in npz:
+                name, ftype = _split_name_and_type(name_and_type)
+                fields[name] = Field(ftype=ftype, value=npz[name_and_type])
+        return cls(fields)
+
+    def to_string(self, max_rows: int | None = 10) -> str:
+        """Convert the frame to a informal string representation.
+
+        :param max_rows: The maximum number of rows to show. If ``None``, all rows
+            are shown.
+        :return: The string representation.
+        """
+        if max_rows is None or max_rows >= self.num_samples:
+            str_df = pd.DataFrame(
+                {name: field._to_str_array() for name, field in self.items()}
+            )
+        else:
+            head = (max_rows + 1) // 2
+            tail = max_rows - head
+            head_str_df = pd.DataFrame(
+                {name: field[:head]._to_str_array() for name, field in self.items()}
+            )
+            mid_str_df = pd.DataFrame({name: ["..."] for name in self.keys()})
+            tail_str_df = pd.DataFrame(
+                {name: field[-tail:]._to_str_array() for name, field in self.items()}
+            )
+            str_df = pd.concat(
+                [head_str_df, mid_str_df, tail_str_df], ignore_index=True
+            )
+        return str_df.to_string()
+
+    @staticmethod
+    def concat(frames: Sequence["Frame"]) -> "Frame":
+        """Concatenate the given frames.
+
+        :param frames: The frames to be concatenated.
+        :raises ValueError: The frames have different fields.
+        :return: The concatenated frame.
+        """
+        names: set[str] = set(frames[0].keys())
+        if not all((set(frame.keys()) == names for frame in frames)):
+            raise ValueError("The frames to concatenate have different fields")
+        fields: dict[str, Field] = {}
+        for name in frames[0]:
+            fields[name] = Field.concat([frame[name] for frame in frames])
+        return Frame(fields)
+
+    class SampleLoc:
+        """SampleLoc defines a helper class to select samples from the frame."""
+
+        def __init__(self, frame: "Frame") -> None:
+            """Initialize the helper object.
+
+            :param frame: The frame to select samples from.
+            """
+            self.frame = frame
+
+        @overload
+        def __getitem__(self, key: slice) -> "Frame":
+            ...
+
+        @overload
+        def __getitem__(self, key: Sequence[SupportsIndex]) -> "Frame":
+            ...
+
+        @overload
+        def __getitem__(self, key: np.ndarray) -> "Frame":
+            ...
+
+        @overload
+        def __getitem__(self, key: SupportsIndex) -> dict[str, Any]:
+            # np.ndarray is a subclass of SupportsIndex, so this overload must be
+            # placed after the overload for np.ndarray.
+            ...
+
+        def __getitem__(self, key):
+            """Select samples from the frame.
+
+            :param key: The index of the samples.
+            :raises TypeError: The parameter ``key`` is not a
+                :external:py:class:`typing.SupportsIndex`, :external:py:class:`slice`,
+                sequence of SupportsIndex or :external:py:class:`numpy.ndarray`.
+            :return: The dict of single sample or the frame of multiple samples.
+            """
+            if isinstance(key, slice):
+                return Frame({name: field[key] for name, field in self.frame.items()})
+            if is_typed_sequence(key, item_type=SupportsIndex):
+                return Frame({name: field[key] for name, field in self.frame.items()})
+            if isinstance(key, np.ndarray):
+                return Frame({name: field[key] for name, field in self.frame.items()})
+            if isinstance(key, SupportsIndex):
+                return {k: v[key] for k, v in self.frame.items()}
+            raise TypeError(
+                "The parameter `key` is not a SupportsIndex, slice, "
+                "sequence[SupportsIndex] or numpy.ndarray"
+            )
+
+    class FieldLoc:
+        """FieldLoc defines a helper class to select fields from the frame."""
+
+        def __init__(self, frame: "Frame") -> None:
+            """Initialize the helper object.
+
+            :param frame: The frame to select fields from.
+            """
+            self.frame = frame
+
+        @overload
+        def __getitem__(self, key: str) -> Field:
+            ...
+
+        @overload
+        def __getitem__(self, key: Sequence[str]) -> "Frame":
+            ...
+
+        def __getitem__(self, key):
+            """Select fields from the frame.
+
+            :param key: The name of the fields.
+            :raises TypeError: The parameter ``key`` is not a string or sequence of
+                strings.
+            :return: The single field or the frame of multiple fields.
+            """
+            if isinstance(key, str):
+                return self.frame[key]
+            if is_typed_sequence(key, item_type=str):
+                return Frame({k: self.frame[k] for k in key})
+            raise TypeError(
+                "The parameter `key` is not a string or sequence of strings."
+            )
 
 
-def concat(frames: Sequence[pd.DataFrame]) -> pd.DataFrame:
-    """Concatenate multiple frames into one.
+def _join_name_and_type(name: str, field: Field) -> str:
+    return f"{name}:{field.ftype.scalar_type.value}:{field.ftype.item_type.value}"
 
-    :param frames: The frames to concatenate.
-    :raises ValueError: The frames have different column names.
-    :return: The concatenated frame.
-    """
-    names: list[str] = sorted(frames[0].columns.to_list())
-    for frame in frames[1:]:
-        if sorted(frame.columns.to_list()) != names:
-            raise ValueError("The frames have different column names.")
-    return downcast(pd.concat(frames, ignore_index=True))
+
+def _split_name_and_type(name_and_type: str) -> tuple[str, FieldType]:
+    name, scalar_type, item_type = name_and_type.rsplit(":", 2)
+    ftype = FieldType(
+        scalar_type=ScalarType(scalar_type), item_type=ItemType(item_type)
+    )
+    return name, ftype
