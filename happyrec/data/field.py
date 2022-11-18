@@ -102,7 +102,7 @@ class ItemType(Enum):
     :param item_type: The item type.
     """
 )
-@dataclass(frozen=True, kw_only=True, slots=True)
+@dataclass(frozen=True, slots=True)
 class FieldType:
     """FieldType defines the type of the field."""
 
@@ -119,7 +119,7 @@ class FieldType:
     :param value: The field value.
     """
 )
-@dataclass(eq=False, kw_only=True, slots=True)
+@dataclass(eq=False, slots=True)
 class Field:
     """Field contains the type and value of the field."""
 
@@ -163,12 +163,12 @@ class Field:
         :return: The single item or the items of multiple items.
         """
         if isinstance(key, slice):
-            return Field(ftype=self.ftype, value=self.value[key])
+            return Field(self.ftype, self.value[key])
         if is_typed_sequence(key, item_type=SupportsIndex):
             key = np.array(key)
-            return Field(ftype=self.ftype, value=self.value[key])
+            return Field(self.ftype, self.value[key])
         if isinstance(key, np.ndarray):
-            return Field(ftype=self.ftype, value=self.value[key])
+            return Field(self.ftype, self.value[key])
         if isinstance(key, SupportsIndex):
             return self.value[key]
         raise TypeError(
@@ -341,7 +341,7 @@ class Field:
 
         :return: The copied field.
         """
-        return Field(ftype=self.ftype, value=self.value.copy())
+        return Field(self.ftype, self.value.copy())
 
     def _to_str_array(self) -> np.ndarray:
         def _join_1d_str_array(arr: np.ndarray) -> str:
@@ -375,7 +375,7 @@ class Field:
                 value = np.fromiter(
                     map(_split_1d_str_array, array), dtype=np.object_, count=len(array)
                 )
-        return Field(ftype=ftype, value=value).downcast()
+        return Field(ftype, value).downcast()
 
     def to_npy(self, path: str | PathLike) -> None:
         """Save the field to a .npy file.
@@ -392,7 +392,7 @@ class Field:
         :param file: The file path.
         :return: The loaded field.
         """
-        return Field(ftype=ftype, value=np.load(path))
+        return Field(ftype, np.load(path))
 
     @staticmethod
     def concat(fields: Sequence["Field"]) -> "Field":
@@ -410,4 +410,4 @@ class Field:
             if not all(field.value.shape[1:] == shape for field in fields):
                 raise ValueError("Some fields in `fields` have different shapes")
         value = np.concatenate([field.value for field in fields], axis=0)
-        return Field(ftype=ftype, value=value)
+        return Field(ftype, value)

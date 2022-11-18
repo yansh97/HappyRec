@@ -281,7 +281,7 @@ class Frame(MutableMapping[str, Field]):
         with np.load(path, allow_pickle=True) as npz:
             for name_and_type in npz:
                 name, ftype = _split_name_and_type(name_and_type)
-                fields[name] = Field(ftype=ftype, value=npz[name_and_type])
+                fields[name] = Field(ftype, npz[name_and_type])
         return cls(fields)
 
     def to_string(self, max_rows: int | None = 10) -> str:
@@ -417,7 +417,5 @@ def _join_name_and_type(name: str, field: Field) -> str:
 
 def _split_name_and_type(name_and_type: str) -> tuple[str, FieldType]:
     name, scalar_type, item_type = name_and_type.rsplit(":", 2)
-    ftype = FieldType(
-        scalar_type=ScalarType(scalar_type), item_type=ItemType(item_type)
-    )
+    ftype = FieldType(ScalarType(scalar_type), ItemType(item_type))
     return name, ftype
