@@ -4,26 +4,27 @@ happyrec.utils
 .. contents:: Contents
    :local:
 
-Doc Utilities
--------------
+File Operations
+---------------
 
-.. currentmodule:: happyrec.utils.doc
+.. currentmodule:: happyrec.utils.file
 .. autosummary::
-   :nosignatures:
 
-   CLS
-   add_init_doc
+   compress
+   decompress
+   checksum
+   download
 
-.. autodata:: CLS
-
-.. autofunction:: add_init_doc
+.. autofunction:: compress
+.. autofunction:: decompress
+.. autofunction:: checksum
+.. autofunction:: download
 
 Type Utilities
 --------------
 
 .. currentmodule:: happyrec.utils.type
 .. autosummary::
-   :nosignatures:
 
    IT
    KT

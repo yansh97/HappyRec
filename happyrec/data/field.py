@@ -7,7 +7,6 @@ from typing import Any, SupportsIndex, overload
 import numpy as np
 
 from ..constants import SEQ_SEP
-from ..utils.doc import add_init_doc
 from ..utils.type import is_typed_sequence
 
 
@@ -19,8 +18,8 @@ class ScalarType(Enum):
     """Boolean scalar."""
     INT = "int"
     """Integer scalar."""
-    CATE = "cate"
-    """Category scalar."""
+    CATEGORICAL = "categorical"
+    """Categorical scalar."""
     FLOAT = "float"
     """Float scalar."""
     STR = "str"
@@ -34,7 +33,7 @@ class ScalarType(Enum):
         match self:
             case ScalarType.BOOL:
                 return (np.bool_,)
-            case ScalarType.INT | ScalarType.CATE:
+            case ScalarType.INT | ScalarType.CATEGORICAL:
                 return (np.int8, np.int16, np.int32, np.int64)
             case ScalarType.FLOAT:
                 return (np.float16, np.float32, np.float64)
@@ -49,7 +48,7 @@ class ScalarType(Enum):
         match self:
             case ScalarType.BOOL:
                 return value.astype(np.int8).astype(np.str_).astype(np.object_)
-            case ScalarType.INT | ScalarType.CATE | ScalarType.FLOAT:
+            case ScalarType.INT | ScalarType.CATEGORICAL | ScalarType.FLOAT:
                 return value.astype(np.str_).astype(np.object_)
             case ScalarType.STR | ScalarType.IMAGE:
                 return value.astype(np.object_)
@@ -60,7 +59,7 @@ class ScalarType(Enum):
         match self:
             case ScalarType.BOOL:
                 return value.astype(np.int8).astype(np.bool_)
-            case ScalarType.INT | ScalarType.CATE:
+            case ScalarType.INT | ScalarType.CATEGORICAL:
                 return value.astype(np.int64)
             case ScalarType.FLOAT:
                 return value.astype(np.float32)
@@ -95,13 +94,6 @@ class ItemType(Enum):
                 return 1
 
 
-@add_init_doc(
-    """Initialize the field type.
-
-    :param scalar_type: The scalar type.
-    :param item_type: The item type.
-    """
-)
 @dataclass(frozen=True, slots=True)
 class FieldType:
     """FieldType defines the type of the field."""
@@ -111,14 +103,20 @@ class FieldType:
     item_type: ItemType
     """The item type."""
 
+    def __str__(self) -> str:
+        return f"{self.item_type.value}<{self.scalar_type.value}>"
 
-@add_init_doc(
-    """Initialize the field.
+    @classmethod
+    def from_string(cls, ftype: str) -> "FieldType":
+        """Create a field type from a string.
 
-    :param ftype: The field type.
-    :param value: The field value.
-    """
-)
+        :param ftype: The string of the field type.
+        :return: The field type.
+        """
+        item_type, scalar_type = ftype[:-1].split("<")
+        return cls(ScalarType(scalar_type), ItemType(item_type))
+
+
 @dataclass(eq=False, slots=True)
 class Field:
     """Field contains the type and value of the field."""
@@ -132,7 +130,7 @@ class Field:
         return len(self.value)
 
     def __str__(self) -> str:
-        return f"<Field<{self.ftype.scalar_type.value}>{list(self.shape)}>"
+        return f"Field<{self.ftype}>{list(self.shape)}"
 
     @overload
     def __getitem__(self, key: slice) -> "Field":
@@ -164,7 +162,7 @@ class Field:
         """
         if isinstance(key, slice):
             return Field(self.ftype, self.value[key])
-        if is_typed_sequence(key, item_type=SupportsIndex):
+        if is_typed_sequence(key, SupportsIndex):
             key = np.array(key)
             return Field(self.ftype, self.value[key])
         if isinstance(key, np.ndarray):
@@ -207,12 +205,12 @@ class Field:
         """
         match (self.ftype.scalar_type, self.ftype.item_type):
             case (
-                ScalarType.INT | ScalarType.CATE | ScalarType.FLOAT,
+                ScalarType.INT | ScalarType.CATEGORICAL | ScalarType.FLOAT,
                 ItemType.SCALAR | ItemType.ARRAY,
             ):
                 return self.value.min()
             case (
-                ScalarType.INT | ScalarType.CATE | ScalarType.FLOAT,
+                ScalarType.INT | ScalarType.CATEGORICAL | ScalarType.FLOAT,
                 ItemType.SEQUENCE,
             ):
                 return np.concatenate(self.value).min()
@@ -226,12 +224,12 @@ class Field:
         """
         match (self.ftype.scalar_type, self.ftype.item_type):
             case (
-                ScalarType.INT | ScalarType.CATE | ScalarType.FLOAT,
+                ScalarType.INT | ScalarType.CATEGORICAL | ScalarType.FLOAT,
                 ItemType.SCALAR | ItemType.ARRAY,
             ):
                 return self.value.max()
             case (
-                ScalarType.INT | ScalarType.CATE | ScalarType.FLOAT,
+                ScalarType.INT | ScalarType.CATEGORICAL | ScalarType.FLOAT,
                 ItemType.SEQUENCE,
             ):
                 return np.concatenate(self.value).max()
@@ -323,9 +321,12 @@ class Field:
             return value
 
         match (self.ftype.scalar_type, self.ftype.item_type):
-            case (ScalarType.INT | ScalarType.CATE, ItemType.SCALAR | ItemType.ARRAY):
+            case (
+                ScalarType.INT | ScalarType.CATEGORICAL,
+                ItemType.SCALAR | ItemType.ARRAY,
+            ):
                 self.value = _downcast_int_array(self.value)
-            case (ScalarType.INT | ScalarType.CATE, ItemType.SEQUENCE):
+            case (ScalarType.INT | ScalarType.CATEGORICAL, ItemType.SEQUENCE):
                 self.value = np.fromiter(
                     np.split(
                         _downcast_int_array(np.concatenate(self.value)),

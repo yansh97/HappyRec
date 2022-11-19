@@ -4,6 +4,7 @@
 wheel
 tqdm
 rich
+pyyaml
 
 numpy
 pandas

@@ -12,7 +12,7 @@ from .field import Field, FieldType, ItemType, ScalarType
 
 class Frame(MutableMapping[str, Field]):
     """Frame defines a container to store multiple fields containing the same number
-    of samples. Frame implements all the interfaces for a mutable mapping of strings
+    of items. Frame implements all the interfaces for a mutable mapping of strings
     to fields, similar to ``dict[str, Field]``.
 
     .. note::
@@ -30,9 +30,9 @@ class Frame(MutableMapping[str, Field]):
         :raises TypeError: The parameter ``fields`` must be a mapping of strings to
             fields.
         :raises ValueError: Some fields in ``fields`` contain different number of
-            samples.
+            items.
         """
-        if not is_typed_mapping(fields, key_type=str, value_type=Field):
+        if not is_typed_mapping(fields, str, Field):
             raise TypeError(
                 "The paramter `fields` is not a mapping of strings to fields."
             )
@@ -41,10 +41,10 @@ class Frame(MutableMapping[str, Field]):
         for field in fields.values():
             if len(field) != field_len:
                 raise ValueError(
-                    "Some fields in `fields` contain different number of samples."
+                    "Some fields in `fields` contain different number of items."
                 )
 
-        self.fields: dict[str, Field] = dict(fields)
+        self._fields: dict[str, Field] = dict(fields)
         """The underlying data of the frame."""
 
     # Object
@@ -57,8 +57,7 @@ class Frame(MutableMapping[str, Field]):
 
     def __str__(self) -> str:
         return (
-            self.to_string()
-            + f"\n[{self.num_samples} samples x {self.num_fields} fields]"
+            self.to_string() + f"\n[{self.num_items} items x {self.num_fields} fields]"
         )
 
     def __lt__(self, other: "Frame") -> bool:
@@ -84,15 +83,15 @@ class Frame(MutableMapping[str, Field]):
 
     # Sized
     def __len__(self) -> int:
-        return len(self.fields)
+        return len(self._fields)
 
     # Iterable
     def __iter__(self) -> Iterator[str]:
-        return iter(self.fields)
+        return iter(self._fields)
 
     # Container
     def __contains__(self, key: str) -> bool:
-        return key in self.fields
+        return key in self._fields
 
     # Mapping
     def __getitem__(self, key: str) -> Field:
@@ -101,7 +100,7 @@ class Frame(MutableMapping[str, Field]):
         :param key: The name of the field.
         :return: The field.
         """
-        return self.fields[key]
+        return self._fields[key]
 
     # MutableMapping
     def __setitem__(self, key: str, value: Field) -> None:
@@ -111,42 +110,41 @@ class Frame(MutableMapping[str, Field]):
         :param value: The field.
         :raises TypeError: The parameter ``key`` must be a string.
         :raises TypeError: The parameter ``value`` must be a field.
-        :raises ValueError: The parameter ``value`` contains different number of
-            samples.
+        :raises ValueError: The parameter ``value`` contains different number of items.
         """
         if not isinstance(key, str):
             raise TypeError("The parameter `key` must be a string.")
         if not isinstance(value, Field):
             raise TypeError("The parameter `value` must be a field.")
-        if self.num_fields > 0 and len(value) != self.num_samples:
+        if self.num_fields > 0 and len(value) != self.num_items:
             raise ValueError(
-                "The parameter `value` contains different number of samples."
+                "The parameter `value` contains different number of items."
             )
-        self.fields[key] = value
+        self._fields[key] = value
 
     def __delitem__(self, key: str) -> None:
         """Delete the field with the given name.
 
         :param key: The name of the field.
         """
-        del self.fields[key]
+        del self._fields[key]
 
     # Frame
     @property
-    def num_samples(self) -> int:
-        """Get the number of samples in the frame."""
+    def num_items(self) -> int:
+        """Get the number of items in the frame."""
         if self.num_fields == 0:
             return 0
         return len(next(iter(self.values())))
 
     @property
-    def loc_samples(self) -> "SampleLoc":
-        """Select samples from the frame.
+    def loc_items(self) -> "ItemLoc":
+        """Select items from the frame.
 
-        ``.loc_samples[]`` is used to select samples of the frame. The allowed key
-        types are listed at :py:meth:`SampleLoc.__getitem__`.
+        ``.loc_items[]`` is used to select items of the frame. The allowed key
+        types are listed at :py:meth:`ItemLoc.__getitem__`.
         """
-        return self.SampleLoc(self)
+        return self.ItemLoc(self)
 
     @property
     def num_fields(self) -> int:
@@ -188,13 +186,13 @@ class Frame(MutableMapping[str, Field]):
     def validate(self) -> "Frame":
         """Validate the frame.
 
-        :raises ValueError: Some fields contain different number of samples.
+        :raises ValueError: Some fields contain different number of items.
         :raises ValueError: Some fields have invalid values.
         :return: The validated frame itself.
         """
         for field in self.values():
-            if len(field) != self.num_samples:
-                raise ValueError("Some fields contain different number of samples.")
+            if len(field) != self.num_items:
+                raise ValueError("Some fields contain different number of items.")
             field.validate()
         return self
 
@@ -291,7 +289,7 @@ class Frame(MutableMapping[str, Field]):
             are shown.
         :return: The string representation.
         """
-        if max_rows is None or max_rows >= self.num_samples:
+        if max_rows is None or max_rows >= self.num_items:
             str_df = pd.DataFrame(
                 {name: field._to_str_array() for name, field in self.items()}
             )
@@ -326,13 +324,13 @@ class Frame(MutableMapping[str, Field]):
             fields[name] = Field.concat([frame[name] for frame in frames])
         return Frame(fields)
 
-    class SampleLoc:
-        """SampleLoc defines a helper class to select samples from the frame."""
+    class ItemLoc:
+        """ItemLoc defines a helper class to select items from the frame."""
 
         def __init__(self, frame: "Frame") -> None:
             """Initialize the helper object.
 
-            :param frame: The frame to select samples from.
+            :param frame: The frame to select items from.
             """
             self.frame = frame
 
@@ -355,17 +353,17 @@ class Frame(MutableMapping[str, Field]):
             ...
 
         def __getitem__(self, key):
-            """Select samples from the frame.
+            """Select items from the frame.
 
-            :param key: The index of the samples.
+            :param key: The index of the items.
             :raises TypeError: The parameter ``key`` is not a
                 :external:py:class:`typing.SupportsIndex`, :external:py:class:`slice`,
                 sequence of SupportsIndex or :external:py:class:`numpy.ndarray`.
-            :return: The dict of single sample or the frame of multiple samples.
+            :return: The dict of single item or the frame of multiple items.
             """
             if isinstance(key, slice):
                 return Frame({name: field[key] for name, field in self.frame.items()})
-            if is_typed_sequence(key, item_type=SupportsIndex):
+            if is_typed_sequence(key, SupportsIndex):
                 return Frame({name: field[key] for name, field in self.frame.items()})
             if isinstance(key, np.ndarray):
                 return Frame({name: field[key] for name, field in self.frame.items()})
@@ -404,7 +402,7 @@ class Frame(MutableMapping[str, Field]):
             """
             if isinstance(key, str):
                 return self.frame[key]
-            if is_typed_sequence(key, item_type=str):
+            if is_typed_sequence(key, str):
                 return Frame({k: self.frame[k] for k in key})
             raise TypeError(
                 "The parameter `key` is not a string or sequence of strings."
