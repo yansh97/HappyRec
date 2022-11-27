@@ -98,7 +98,7 @@ class ItemType(Enum):
                 return value.shape
             case ItemType.SEQUENCE:
                 seq_lens: np.ndarray = np.vectorize(len)(value)
-                return value.shape + ((seq_lens.min(), seq_lens.max()),)
+                return value.shape + ((int(seq_lens.min()), int(seq_lens.max())),)
 
     def _mean(self, value: np.ndarray) -> Any:
         match self:

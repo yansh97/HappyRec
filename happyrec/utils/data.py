@@ -103,30 +103,6 @@ def convert_image_to_array(path: str | PathLike) -> np.ndarray:
     return np.frombuffer(byteio.getvalue(), dtype=np.uint8)
 
 
-# def str_to_cate_seq(series: pd.Series, sep: str) -> pd.Series:
-#     return series.apply(
-#         lambda s: np.array(s.split(sep) if pd.notna(s) else [None], dtype=np.str_)
-#     )
-
-
-# def str_to_timestamp(series: pd.Series, /) -> pd.Series:
-#     return pd.to_datetime(series).astype(int) // 10**9
-
-
-# def timestamp_to_cate(series: pd.Series, /) -> pd.Series:
-#     return pd.to_datetime(series, unit="s").apply(
-#         lambda dt: f"{dt.year}-{dt.month:02d}" if pd.notna(dt) else None
-#     )
-
-
-# def latitude_to_cate(series: pd.Series, /) -> pd.Series:
-#     return series.apply(lambda x: int(x) // 10 if pd.notna(x) else None)
-
-
-# def longitude_to_cate(series: pd.Series, /) -> pd.Series:
-#     return series.apply(lambda x: int(x) // 10 if pd.notna(x) else None)
-
-
 def parallelize(
     dataframe: pd.DataFrame, func: Callable[[pd.DataFrame], pd.DataFrame | Exception]
 ) -> pd.DataFrame:
@@ -190,29 +166,31 @@ def filter_unused_uids_and_iids(
 ) -> tuple[Frame, Frame | None, Frame | None]:
     array_in: Callable[[Any, np.ndarray], np.ndarray] = np.vectorize(operator.contains)
 
-    interaction_mask = np.full(interaction_frame.num_items, True)
-    num_interactions = interaction_frame.num_items
+    interaction_mask = np.full(interaction_frame.num_elements, True)
+    num_interactions = interaction_frame.num_elements
     if user_frame is not None:
         uid_set = set(user_frame[UID].value)
         interaction_mask &= array_in(uid_set, interaction_frame[UID].value)
     if item_frame is not None:
         iid_set = set(item_frame[IID].value)
         interaction_mask &= array_in(iid_set, interaction_frame[IID].value)
-    interaction_frame = interaction_frame.loc_items[interaction_mask]
+    interaction_frame = interaction_frame.loc_elements[interaction_mask]
     logger.debug(
-        "Filtered interactions: %d -> %d", num_interactions, interaction_frame.num_items
+        "Filtered interactions: %d -> %d",
+        num_interactions,
+        interaction_frame.num_elements,
     )
 
     if user_frame is not None:
-        num_users = user_frame.num_items
+        num_users = user_frame.num_elements
         uid_set = set(interaction_frame[UID].value)
-        user_frame = user_frame.loc_items[array_in(uid_set, user_frame[UID].value)]
-        logger.debug("Filtered users: %d -> %d", num_users, user_frame.num_items)
+        user_frame = user_frame.loc_elements[array_in(uid_set, user_frame[UID].value)]
+        logger.debug("Filtered users: %d -> %d", num_users, user_frame.num_elements)
     if item_frame is not None:
-        num_items = item_frame.num_items
+        num_items = item_frame.num_elements
         iid_set = set(interaction_frame[IID].value)
-        item_frame = item_frame.loc_items[array_in(iid_set, item_frame[IID].value)]
-        logger.debug("Filtered items: %d -> %d", num_items, item_frame.num_items)
+        item_frame = item_frame.loc_elements[array_in(iid_set, item_frame[IID].value)]
+        logger.debug("Filtered items: %d -> %d", num_items, item_frame.num_elements)
 
     return interaction_frame, user_frame, item_frame
 

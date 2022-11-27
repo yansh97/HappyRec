@@ -24,7 +24,7 @@ from .field import (  # noqa: F401
 
 class Frame(MutableMapping[str, Field]):
     """Frame defines a container to store multiple fields containing the same number
-    of items. Frame implements all the interfaces for a mutable mapping of strings
+    of elements. Frame implements all the interfaces for a mutable mapping of strings
     to fields, similar to ``dict[str, Field]``.
 
     .. note::
@@ -42,7 +42,7 @@ class Frame(MutableMapping[str, Field]):
         :raises TypeError: The parameter ``fields`` must be a mapping of strings to
             fields.
         :raises ValueError: Some fields in ``fields`` contain different number of
-            items.
+            elements.
         """
         if not is_typed_mapping(fields, str, Field):
             raise TypeError(
@@ -53,7 +53,7 @@ class Frame(MutableMapping[str, Field]):
         for field in fields.values():
             if len(field) != field_len:
                 raise ValueError(
-                    "Some fields in `fields` contain different number of items."
+                    "Some fields in `fields` contain different number of elements."
                 )
 
         self._fields: dict[str, Field] = dict(fields)
@@ -69,7 +69,8 @@ class Frame(MutableMapping[str, Field]):
 
     def __str__(self) -> str:
         return (
-            self.to_string() + f"\n[{self.num_items} items x {self.num_fields} fields]"
+            self.to_string()
+            + f"\n[{self.num_elements} elements x {self.num_fields} fields]"
         )
 
     def __lt__(self, other: "Frame") -> bool:
@@ -122,15 +123,16 @@ class Frame(MutableMapping[str, Field]):
         :param value: The field.
         :raises TypeError: The parameter ``key`` must be a string.
         :raises TypeError: The parameter ``value`` must be a field.
-        :raises ValueError: The parameter ``value`` contains different number of items.
+        :raises ValueError: The parameter ``value`` contains different number of
+            elements.
         """
         if not isinstance(key, str):
             raise TypeError("The parameter `key` must be a string.")
         if not isinstance(value, Field):
             raise TypeError("The parameter `value` must be a field.")
-        if self.num_fields > 0 and len(value) != self.num_items:
+        if self.num_fields > 0 and len(value) != self.num_elements:
             raise ValueError(
-                "The parameter `value` contains different number of items."
+                "The parameter `value` contains different number of elements."
             )
         self._fields[key] = value
 
@@ -143,20 +145,20 @@ class Frame(MutableMapping[str, Field]):
 
     # Frame
     @property
-    def num_items(self) -> int:
-        """Get the number of items in the frame."""
+    def num_elements(self) -> int:
+        """Get the number of elements in the frame."""
         if self.num_fields == 0:
             return 0
         return len(next(iter(self.values())))
 
     @property
-    def loc_items(self) -> "ItemLoc":
-        """Select items from the frame.
+    def loc_elements(self) -> "ElementLoc":
+        """Select elements from the frame.
 
-        ``.loc_items[]`` is used to select items of the frame. The allowed key
-        types are listed at :py:meth:`ItemLoc.__getitem__`.
+        ``.loc_elements[]`` is used to select elements of the frame. The allowed key
+        types are listed at :py:meth:`ElementLoc.__getitem__`.
         """
-        return self.ItemLoc(self)
+        return self.ElementLoc(self)
 
     @property
     def num_fields(self) -> int:
@@ -172,7 +174,7 @@ class Frame(MutableMapping[str, Field]):
         """
         return self.FieldLoc(self)
 
-    def describe(self, max_colwidth: int | None = 20) -> str:
+    def describe(self, max_colwidth: int | None = 25) -> str:
         """Get the description of the frame.
 
         :return: The description of the frame.
@@ -184,13 +186,13 @@ class Frame(MutableMapping[str, Field]):
     def validate(self) -> "Frame":
         """Validate the frame.
 
-        :raises ValueError: Some fields contain different number of items.
+        :raises ValueError: Some fields contain different number of elements.
         :raises ValueError: Some fields have invalid values.
         :return: The validated frame itself.
         """
         for field in self.values():
-            if len(field) != self.num_items:
-                raise ValueError("Some fields contain different number of items.")
+            if len(field) != self.num_elements:
+                raise ValueError("Some fields contain different number of elements.")
             field.validate()
         return self
 
@@ -265,7 +267,7 @@ class Frame(MutableMapping[str, Field]):
         return cls(fields)
 
     def to_string(
-        self, max_rows: int | None = 10, max_colwidth: int | None = 20
+        self, max_rows: int | None = 10, max_colwidth: int | None = 25
     ) -> str:
         """Convert the frame to a informal string representation.
 
@@ -275,7 +277,7 @@ class Frame(MutableMapping[str, Field]):
             characters are shown.
         :return: The string representation.
         """
-        if max_rows is None or max_rows >= self.num_items:
+        if max_rows is None or max_rows >= self.num_elements:
             str_df = pd.DataFrame(
                 {name: field._to_str_array() for name, field in self.items()}
             )
@@ -310,13 +312,13 @@ class Frame(MutableMapping[str, Field]):
             fields[name] = Field.concat([frame[name] for frame in frames])
         return Frame(fields)
 
-    class ItemLoc:
-        """ItemLoc defines a helper class to select items from the frame."""
+    class ElementLoc:
+        """ElementLoc defines a helper class to select elements from the frame."""
 
         def __init__(self, frame: "Frame") -> None:
             """Initialize the helper object.
 
-            :param frame: The frame to select items from.
+            :param frame: The frame to select elements from.
             """
             self.frame = frame
 
@@ -339,13 +341,13 @@ class Frame(MutableMapping[str, Field]):
             ...
 
         def __getitem__(self, key):
-            """Select items from the frame.
+            """Select elements from the frame.
 
-            :param key: The index of the items.
+            :param key: The index of the elements.
             :raises TypeError: The parameter ``key`` is not a
                 :external:py:class:`typing.SupportsIndex`, :external:py:class:`slice`,
                 sequence of SupportsIndex or :external:py:class:`numpy.ndarray`.
-            :return: The dict of single item or the frame of multiple items.
+            :return: The dict of single element or the frame of multiple elements.
             """
             if isinstance(key, slice):
                 return Frame({name: field[key] for name, field in self.frame.items()})
