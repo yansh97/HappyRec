@@ -1,13 +1,25 @@
 from collections.abc import Iterator, Mapping, MutableMapping, Sequence
 from os import PathLike
+from pathlib import Path
 from typing import Any, SupportsIndex, overload
 
 import numpy as np
 import pandas as pd
 
 from ..constants import FIELD_SEP
+from ..utils.logger import logger
 from ..utils.type import is_typed_mapping, is_typed_sequence
-from .field import Field, FieldType, ItemType, ScalarType
+from .field import (  # noqa: F401
+    CategoricalType,
+    Field,
+    FieldType,
+    ImageType,
+    ItemType,
+    NumericType,
+    ObjectType,
+    ScalarType,
+    TextType,
+)
 
 
 class Frame(MutableMapping[str, Field]):
@@ -21,7 +33,7 @@ class Frame(MutableMapping[str, Field]):
         frozen and comparable.
     """
 
-    __slots__ = ["fields"]
+    __slots__ = ("_fields",)
 
     def __init__(self, fields: Mapping[str, Field]) -> None:
         """Initialize the frame with a mapping of names to fields.
@@ -160,28 +172,14 @@ class Frame(MutableMapping[str, Field]):
         """
         return self.FieldLoc(self)
 
-    def describe(self) -> str:
+    def describe(self, max_colwidth: int | None = 20) -> str:
         """Get the description of the frame.
 
         :return: The description of the frame.
         """
-        desc_df = pd.DataFrame(
-            {
-                "name": list(self.keys()),
-                "scalar type": [
-                    field.ftype.scalar_type.value for field in self.values()
-                ],
-                "numpy dtype": [
-                    field.value.dtype.type.__name__ for field in self.values()
-                ],
-                "item type": [field.ftype.item_type.value for field in self.values()],
-                "shape": [str(field.shape) for field in self.values()],
-                "mean": [str(field.mean()) for field in self.values()],
-                "min": [str(field.min()) for field in self.values()],
-                "max": [str(field.max()) for field in self.values()],
-            }
-        )
-        return desc_df.to_string()
+        fields_info = [{"name": name, **field._info()} for name, field in self.items()]
+        desc_df = pd.DataFrame.from_records(fields_info)
+        return desc_df.to_string(max_colwidth=max_colwidth)
 
     def validate(self) -> "Frame":
         """Validate the frame.
@@ -210,13 +208,10 @@ class Frame(MutableMapping[str, Field]):
 
         :param name: The name of the field to sort by.
         :raises ValueError: The field ``name`` does not exist.
-        :raises ValueError: The item type of the field is not scalar.
         :return: The sorted frame itself.
         """
         if name not in self:
             raise ValueError(f'Field "{name}" does not exist.')
-        if self[name].ftype.item_type != ItemType.SCALAR:
-            raise ValueError("The item type of the field is not scalar.")
         indices = np.argsort(self[name].value, axis=0, kind="stable")
         for field in self.values():
             field.value = field.value[indices]
@@ -234,38 +229,23 @@ class Frame(MutableMapping[str, Field]):
 
         :param path: The path to the CSV file.
         """
+        path = Path(path)
+        logger.info(f"Saving frame to {path.name} ...")
         str_df = pd.DataFrame()
         for name, field in self.items():
-            name_and_type = _join_name_and_type(name, field)
-            str_df[name_and_type] = field._to_str_array()
+            str_df[f"{name}:{repr(field.ftype)}"] = field._to_str_array()
         str_df.to_csv(path, sep=FIELD_SEP, index=False, header=True)
-
-    @classmethod
-    def from_csv(cls, path: str | PathLike) -> "Frame":
-        """Load the frame from a CSV file.
-
-        :param path: The path to the CSV file.
-        :return: The loaded frame.
-        """
-        str_df = pd.read_csv(
-            path, sep=FIELD_SEP, header=0, index_col=False, dtype=np.str_
-        )
-        fields: dict[str, Field] = {}
-        for name_and_type in str_df.columns:
-            name, ftype = _split_name_and_type(name_and_type)
-            array = str_df[name_and_type].to_numpy()
-            fields[name] = Field._from_str_array(ftype, array)
-        return cls(fields)
 
     def to_npz(self, path: str | PathLike) -> None:
         """Save the frame to a NPZ file.
 
         :param path: The path to the NPZ file.
         """
+        path = Path(path)
+        logger.info(f"Saving frame to {path.name} ...")
         array_dict: dict[str, np.ndarray] = {}
         for name, field in self.items():
-            name_and_type = _join_name_and_type(name, field)
-            array_dict[name_and_type] = field.value
+            array_dict[f"{name}:{repr(field.ftype)}"] = field.value
         np.savez(path, **array_dict)
 
     @classmethod
@@ -275,18 +255,24 @@ class Frame(MutableMapping[str, Field]):
         :param path: The path to the NPZ file.
         :return: The loaded frame.
         """
+        path = Path(path)
+        logger.info(f"Loading frame from {path.name} ...")
         fields: dict[str, Field] = {}
         with np.load(path, allow_pickle=True) as npz:
-            for name_and_type in npz:
-                name, ftype = _split_name_and_type(name_and_type)
-                fields[name] = Field(ftype, npz[name_and_type])
+            for name_and_ftype in npz:
+                name, ftype = name_and_ftype.rsplit(":", 1)
+                fields[name] = Field(eval(ftype), npz[name_and_ftype])
         return cls(fields)
 
-    def to_string(self, max_rows: int | None = 10) -> str:
+    def to_string(
+        self, max_rows: int | None = 10, max_colwidth: int | None = 20
+    ) -> str:
         """Convert the frame to a informal string representation.
 
         :param max_rows: The maximum number of rows to show. If ``None``, all rows
             are shown.
+        :param max_row_width: The maximum width of each row. If ``None``, all
+            characters are shown.
         :return: The string representation.
         """
         if max_rows is None or max_rows >= self.num_items:
@@ -306,7 +292,7 @@ class Frame(MutableMapping[str, Field]):
             str_df = pd.concat(
                 [head_str_df, mid_str_df, tail_str_df], ignore_index=True
             )
-        return str_df.to_string()
+        return str_df.to_string(max_colwidth=max_colwidth)
 
     @staticmethod
     def concat(frames: Sequence["Frame"]) -> "Frame":
@@ -407,13 +393,3 @@ class Frame(MutableMapping[str, Field]):
             raise TypeError(
                 "The parameter `key` is not a string or sequence of strings."
             )
-
-
-def _join_name_and_type(name: str, field: Field) -> str:
-    return f"{name}:{field.ftype.scalar_type.value}:{field.ftype.item_type.value}"
-
-
-def _split_name_and_type(name_and_type: str) -> tuple[str, FieldType]:
-    name, scalar_type, item_type = name_and_type.rsplit(":", 2)
-    ftype = FieldType(ScalarType(scalar_type), ItemType(item_type))
-    return name, ftype

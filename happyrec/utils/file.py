@@ -1,5 +1,7 @@
 import hashlib
 import lzma
+import multiprocessing
+import subprocess
 from os import PathLike
 from pathlib import Path
 
@@ -18,18 +20,9 @@ def compress(src: str | PathLike, dst: str | PathLike) -> None:
     src = Path(src)
     dst = Path(dst)
     logger.info(f"Compressing {src.name} to {dst.name} ...")
-    compressor = lzma.LZMACompressor()
-    with open(src, "rb") as f_in:
-        with open(dst, "wb") as f_out:
-            with Progress() as progress:
-                task = progress.add_task(
-                    f"Compressing {src.name} to {dst.name} ...",
-                    total=src.stat().st_size,
-                )
-                while chunk := f_in.read(1024):
-                    progress.update(task, advance=len(chunk))
-                    f_out.write(compressor.compress(chunk))
-                f_out.write(compressor.flush())
+    cores = multiprocessing.cpu_count() // 2
+    cmd = f"xz -zcf6vv -T{cores} {src} > {dst}"
+    subprocess.run(cmd, shell=True)
 
 
 def decompress(src: str | PathLike, dst: str | PathLike) -> None:
@@ -44,7 +37,7 @@ def decompress(src: str | PathLike, dst: str | PathLike) -> None:
     decompressor = lzma.LZMADecompressor()
     with open(src, "rb") as f_in:
         with open(dst, "wb") as f_out:
-            with Progress() as progress:
+            with Progress(transient=True) as progress:
                 task = progress.add_task(
                     f"Decompressing {src.name} to {dst.name} ...",
                     total=src.stat().st_size,
@@ -64,7 +57,7 @@ def checksum(path: str | PathLike) -> str:
     logger.info(f"Calculating the checksum of {path.name} ...")
     sha256 = hashlib.sha256()
     with open(path, "rb") as f_in:
-        with Progress() as progress:
+        with Progress(transient=True) as progress:
             task = progress.add_task(
                 f"Calculating checksum of {path.name} ...", total=path.stat().st_size
             )
@@ -86,7 +79,7 @@ def download(url: str, dst: str | PathLike) -> None:
         with open(dst, "wb") as f_out:
             content_length = resp.headers.get("Content-Length")
             size = int(content_length) if content_length else None
-            with Progress() as progress:
+            with Progress(transient=True) as progress:
                 task = progress.add_task(f"Downloading {dst.name} ...", total=size)
                 for chunk in resp.iter_content(chunk_size=1024):
                     if not chunk:

@@ -13,11 +13,26 @@ Field
    ScalarType
    ItemType
    FieldType
+   NumericType
+   CategoricalType
+   TextType
+   ImageType
+   ObjectType
    Field
 
 .. autoclass:: ScalarType
 .. autoclass:: ItemType
 .. autoclass:: FieldType
+   :exclude-members: __init__
+.. autoclass:: NumericType
+   :exclude-members: __init__
+.. autoclass:: CategoricalType
+   :exclude-members: __init__
+.. autoclass:: TextType
+   :exclude-members: __init__
+.. autoclass:: ImageType
+   :exclude-members: __init__
+.. autoclass:: ObjectType
    :exclude-members: __init__
 .. autoclass:: Field
    :exclude-members: __init__

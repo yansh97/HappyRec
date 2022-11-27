@@ -1,20 +1,29 @@
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum, unique
 from os import PathLike
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from ..utils.file import checksum, compress
-from .field import FieldType
+from ..utils.logger import logger
+from .field import (  # noqa: F401
+    CategoricalType,
+    FieldType,
+    ImageType,
+    ItemType,
+    NumericType,
+    ObjectType,
+    ScalarType,
+    TextType,
+)
 from .frame import Frame
 from .predefined_fields import (
     FTYPES,
     IID,
     LABEL,
-    ORIGINAL_IID,
-    ORIGINAL_UID,
     POP_PROB,
     TEST_IIDS_SET,
     TEST_MASK,
@@ -40,14 +49,17 @@ class Source(Enum):
     ITEM = "item"
     """Fields associated with the items."""
 
+    def __repr__(self) -> str:
+        return str(self)
+
 
 _FRAMES_NPZ = {
-    Source.INTERACTION: "inter_frame.npz",
+    Source.INTERACTION: "interaction_frame.npz",
     Source.USER: "user_frame.npz",
     Source.ITEM: "item_frame.npz",
 }
 _FRAMES_CSV = {
-    Source.INTERACTION: "inter_frame.csv",
+    Source.INTERACTION: "interaction_frame.csv",
     Source.USER: "user_frame.csv",
     Source.ITEM: "item_frame.csv",
 }
@@ -55,6 +67,8 @@ _FRAMES_CSV = {
 
 class Data:
     """Data is used to store the interaction, user, and item frame."""
+
+    __slots__ = ("frames",)
 
     def __init__(
         self, interaction_frame: Frame, user_frame: Frame, item_frame: Frame
@@ -67,7 +81,7 @@ class Data:
         """
         super().__init__()
 
-        self._frames: dict[Source, Frame] = {
+        self.frames: dict[Source, Frame] = {
             Source.INTERACTION: interaction_frame,
             Source.USER: user_frame,
             Source.ITEM: item_frame,
@@ -77,7 +91,15 @@ class Data:
     @property
     def interaction_frame(self) -> Frame:
         """The interaction frame."""
-        return self._frames[Source.INTERACTION]
+        return self.frames[Source.INTERACTION]
+
+    @interaction_frame.setter
+    def interaction_frame(self, frame: Frame) -> None:
+        """Set the interaction frame.
+
+        :param frame: The interaction frame.
+        """
+        self.frames[Source.INTERACTION] = frame
 
     @property
     def num_interactions(self) -> int:
@@ -87,7 +109,15 @@ class Data:
     @property
     def user_frame(self) -> Frame:
         """The user frame."""
-        return self._frames[Source.USER]
+        return self.frames[Source.USER]
+
+    @user_frame.setter
+    def user_frame(self, frame: Frame) -> None:
+        """Set the user frame.
+
+        :param frame: The user frame.
+        """
+        self.frames[Source.USER] = frame
 
     @property
     def num_users(self) -> int:
@@ -97,7 +127,15 @@ class Data:
     @property
     def item_frame(self) -> Frame:
         """The item frame."""
-        return self._frames[Source.ITEM]
+        return self.frames[Source.ITEM]
+
+    @item_frame.setter
+    def item_frame(self, frame: Frame) -> None:
+        """Set the item frame.
+
+        :param frame: The item frame.
+        """
+        self.frames[Source.ITEM] = frame
 
     @property
     def num_items(self) -> int:
@@ -153,8 +191,8 @@ class Data:
         """The base fields used in HappyRec."""
         fields = {
             Source.INTERACTION: [UID, IID, LABEL],
-            Source.USER: [UID, ORIGINAL_UID],
-            Source.ITEM: [IID, ORIGINAL_IID],
+            Source.USER: [UID],
+            Source.ITEM: [IID],
         }
         if self.has_timestamp:
             fields[Source.INTERACTION].append(TIMESTAMP)
@@ -176,7 +214,7 @@ class Data:
             Source.ITEM: [],
         }
         for source in Source:
-            for field in self._frames[source]:
+            for field in self.frames[source]:
                 if field not in base_fields[source]:
                     fields[source].append(field)
         return fields
@@ -190,45 +228,29 @@ class Data:
         # validate the types of the base fields
         for source, fields in self.base_fields.items():
             for field in fields:
-                if field not in self._frames[source]:
+                if field not in self.frames[source]:
                     raise ValueError(f"Mising field {field} in {source} frame.")
-                if self._frames[source][field].ftype != FTYPES[field]:
+                if self.frames[source][field].ftype != FTYPES[field]:
                     raise ValueError(
                         f"Invalid field type of field {field} in {source} frame."
                     )
 
         # validate the user frame
-        if not (
-            self.user_frame[UID].value == np.arange(self.user_frame.num_items)
-        ).all():
-            raise ValueError(
-                "UID field in user frame should be a continuous range starting from 0."
-            )
         self.user_frame.validate()
 
         # validate the item frame
-        if not (
-            self.item_frame[IID].value == np.arange(self.item_frame.num_items)
-        ).all():
-            raise ValueError(
-                "IID field in item frame should be a continuous range starting from 0."
-            )
         self.item_frame.validate()
 
         # validate the inter frame
-        if (
-            self.interaction_frame[UID].value.min() < 0
-            or self.interaction_frame[UID].value.max() >= self.user_frame.num_items
-        ):
+        if set(self.interaction_frame[UID].value) > set(self.user_frame[UID].value):
             raise ValueError(
-                "UID field in inter frame should be in the range of [0, num_users)."
+                "The user IDs in the interaction frame are not a subset of the user IDs"
+                "in the user frame."
             )
-        if (
-            self.interaction_frame[IID].value.min() < 0
-            or self.interaction_frame[IID].value.max() >= self.item_frame.num_items
-        ):
+        if set(self.interaction_frame[IID].value) > set(self.item_frame[IID].value):
             raise ValueError(
-                "IID field in inter frame should be in the range of [0, num_items)."
+                "The item IDs in the interaction frame are not a subset of the item IDs"
+                "in the item frame."
             )
         self.interaction_frame.validate()
 
@@ -238,18 +260,19 @@ class Data:
         return (
             self.interaction_frame.to_string()
             + f"\n[{self.num_interactions} interactions"
-            + f" x {self.interaction_frame.num_fields} fields]"
+            + f" x {self.interaction_frame.num_fields} fields]\n"
             + self.user_frame.to_string()
             + f"\n[{self.num_users} users"
-            + f" x {self.user_frame.num_fields} fields]"
+            + f" x {self.user_frame.num_fields} fields]\n"
             + self.item_frame.to_string()
             + f"\n[{self.num_items} items"
-            + f" x {self.item_frame.num_fields} fields]"
+            + f" x {self.item_frame.num_fields} fields]\n"
         )
 
     def info(self) -> None:
         """Print the information of the data."""
         print(self.__class__)
+
         print(f"# Interactions: {self.num_interactions}")
         print(f"With timestamp: {self.has_timestamp}")
         print(f"Splitted: {self.is_splitted}")
@@ -262,6 +285,7 @@ class Data:
             f"Context fields of interactions: {self.context_fields[Source.INTERACTION]}"
         )
         print(self.interaction_frame.describe())
+
         print(f"# Users: {self.num_users}")
         print(f"With evaluation negative samples: {self.has_eval_negative_samples}")
         if self.has_eval_negative_samples:
@@ -270,6 +294,7 @@ class Data:
         print(f"Base fields of users: {self.base_fields[Source.USER]}")
         print(f"Context fields of users: {self.context_fields[Source.USER]}")
         print(self.user_frame.describe())
+
         print(f"# Items: {self.num_items}")
         print(f"Base fields of items: {self.base_fields[Source.ITEM]}")
         print(f"Context fields of items: {self.context_fields[Source.ITEM]}")
@@ -281,8 +306,9 @@ class Data:
         :param path: The directory to save the data.
         """
         path = Path(path)
+        logger.info(f"Saving data to {path} ...")
         path.mkdir(parents=True, exist_ok=True)
-        for source, frame in self._frames.items():
+        for source, frame in self.frames.items():
             frame.to_npz(path / _FRAMES_NPZ[source])
 
     @classmethod
@@ -293,6 +319,7 @@ class Data:
         :return: The loaded data.
         """
         path = Path(path)
+        logger.info(f"Loading data from {path} ...")
         interaction_frame = Frame.from_npz(path / _FRAMES_NPZ[Source.INTERACTION])
         user_frame = Frame.from_npz(path / _FRAMES_NPZ[Source.USER])
         item_frame = Frame.from_npz(path / _FRAMES_NPZ[Source.ITEM])
@@ -304,26 +331,14 @@ class Data:
         :param path: The directory to save the data.
         """
         path = Path(path)
+        logger.info(f"Saving data to {path} ...")
         path.mkdir(parents=True, exist_ok=True)
-        for source, frame in self._frames.items():
+        for source, frame in self.frames.items():
             frame.to_csv(path / _FRAMES_CSV[source])
-
-    @classmethod
-    def from_csv(cls, path: str | PathLike) -> "Data":
-        """Load the data from csv files.
-
-        :param path: The directory to load the data.
-        :return: The loaded data.
-        """
-        path = Path(path)
-        interaction_frame = Frame.from_csv(path / _FRAMES_CSV[Source.INTERACTION])
-        user_frame = Frame.from_csv(path / _FRAMES_CSV[Source.USER])
-        item_frame = Frame.from_csv(path / _FRAMES_CSV[Source.ITEM])
-        return cls(interaction_frame, user_frame, item_frame)
 
 
 _FRAMES_NPZ_XZ = {
-    Source.INTERACTION: "inter_frame.npz.xz",
+    Source.INTERACTION: "interaction_frame.npz.xz",
     Source.USER: "user_frame.npz.xz",
     Source.ITEM: "item_frame.npz.xz",
 }
@@ -340,21 +355,17 @@ class DataInfo:
     """Citation of the data."""
     homepage: str
     """Homepage of the data."""
-    num_interactions: int
-    """Number of interactions."""
-    num_users: int
-    """Number of users."""
-    num_items: int
-    """Number of items."""
-    base_fields: dict[Source, dict[str, FieldType]]
-    """Base fields for each source."""
-    context_fields: dict[Source, dict[str, FieldType]]
-    """Context fields for each source."""
-    files_size: dict[Source, int]
+    num_entities: dict[str, int]
+    """Number of entities of each source."""
+    base_fields: dict[str, dict[str, dict[str, Any]]]
+    """Base field information of each source."""
+    context_fields: dict[str, dict[str, dict[str, Any]]]
+    """Context field information of each source."""
+    files_size: dict[str, int]
     """Size of the data file for each source."""
-    compressed_files_size: dict[Source, int]
+    compressed_files_size: dict[str, int]
     """Size of the compressed data file for each source."""
-    files_checksum: dict[Source, str]
+    files_checksum: dict[str, str]
     """SHA256 Checksum of the compressed data file for each source."""
 
     @classmethod
@@ -374,40 +385,45 @@ class DataInfo:
         :return: The data information.
         """
         path = Path(path)
+        logger.info(f"Creating data information from {path} ...")
         data = Data.from_npz(path)
 
-        base_fields: dict[Source, dict[str, FieldType]] = {}
+        num_entities: dict[str, int] = {
+            source.value: frame.num_items for source, frame in data.frames.items()
+        }
+
+        base_fields: dict[str, dict[str, dict[str, Any]]] = {}
         for source, fields in data.base_fields.items():
-            frame = data._frames[source]
-            base_fields[source] = {name: frame[name].ftype for name in fields}
+            frame = data.frames[source]
+            base_fields[source.value] = {name: frame[name]._info() for name in fields}
 
-        context_fields: dict[Source, dict[str, FieldType]] = {}
+        context_fields: dict[str, dict[str, dict[str, Any]]] = {}
         for source, fields in data.context_fields.items():
-            frame = data._frames[source]
-            context_fields[source] = {name: frame[name].ftype for name in fields}
+            frame = data.frames[source]
+            context_fields[source.value] = {
+                name: frame[name]._info() for name in fields
+            }
 
-        files_size: dict[Source, int] = {
-            source: (path / filename).stat().st_size
+        files_size: dict[str, int] = {
+            source.value: (path / filename).stat().st_size
             for source, filename in _FRAMES_NPZ.items()
         }
 
-        compressed_files_size: dict[Source, int] = {}
-        files_checksum: dict[Source, str] = {}
+        compressed_files_size: dict[str, int] = {}
+        files_checksum: dict[str, str] = {}
         for source, filename in _FRAMES_NPZ_XZ.items():
             compressed_file_path = path / filename
             if not compressed_file_path.exists():
                 file_path = path / _FRAMES_NPZ[source]
                 compress(file_path, compressed_file_path)
-            compressed_files_size[source] = compressed_file_path.stat().st_size
-            files_checksum[source] = checksum(compressed_file_path)
+            compressed_files_size[source.value] = compressed_file_path.stat().st_size
+            files_checksum[source.value] = checksum(compressed_file_path)
 
         return cls(
             description=description,
             citation=citation,
             homepage=homepage,
-            num_interactions=data.num_interactions,
-            num_users=data.num_users,
-            num_items=data.num_items,
+            num_entities=num_entities,
             base_fields=base_fields,
             context_fields=context_fields,
             files_size=files_size,
@@ -422,35 +438,9 @@ class DataInfo:
         :param pretty_print: Whether to pretty print the json file.
         """
         path = Path(path)
-        data_info_dict = {
-            "description": self.description,
-            "citation": self.citation,
-            "homepage": self.homepage,
-            "num_interactions": self.num_interactions,
-            "num_users": self.num_users,
-            "num_items": self.num_items,
-            "base_fields": {
-                source.value: {name: str(ftype) for name, ftype in fields.items()}
-                for source, fields in self.base_fields.items()
-            },
-            "context_fields": {
-                source.value: {name: str(ftype) for name, ftype in fields.items()}
-                for source, fields in self.context_fields.items()
-            },
-            "files_size": {
-                source.value: size for source, size in self.files_size.items()
-            },
-            "compressed_files_size": {
-                source.value: size
-                for source, size in self.compressed_files_size.items()
-            },
-            "files_checksum": {
-                source.value: checksum
-                for source, checksum in self.files_checksum.items()
-            },
-        }
+        logger.info(f"Saving data info to {path} ...")
         with open(path / _DATA_INFO_JSON, "w", encoding="utf-8") as f:
-            json.dump(data_info_dict, f, indent=4 if pretty_print else None)
+            json.dump(asdict(self), f, indent=4 if pretty_print else None)
 
     @classmethod
     def from_json(cls, path: str | PathLike) -> "DataInfo":
@@ -460,37 +450,6 @@ class DataInfo:
         :return: The data info.
         """
         path = Path(path)
+        logger.info(f"Loading data info from {path} ...")
         with open(path / _DATA_INFO_JSON, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        data_info_dict = {
-            "description": obj["description"],
-            "citation": obj["citation"],
-            "homepage": obj["homepage"],
-            "num_interactions": obj["num_interactions"],
-            "num_users": obj["num_users"],
-            "num_items": obj["num_items"],
-            "base_fields": {
-                Source(source): {
-                    name: FieldType.from_string(ftype) for name, ftype in fields.items()
-                }
-                for source, fields in obj["base_fields"].items()
-            },
-            "context_fields": {
-                Source(source): {
-                    name: FieldType.from_string(ftype) for name, ftype in fields.items()
-                }
-                for source, fields in obj["context_fields"].items()
-            },
-            "files_size": {
-                Source(source): size for source, size in obj["files_size"].items()
-            },
-            "compressed_files_size": {
-                Source(source): size
-                for source, size in obj["compressed_files_size"].items()
-            },
-            "files_checksum": {
-                Source(source): checksum
-                for source, checksum in obj["files_checksum"].items()
-            },
-        }
-        return cls(**data_info_dict)
+            return cls(**json.load(f))

@@ -12,6 +12,7 @@ pyarrow
 polars
 
 torch>=1.12,<1.13
+torchvision>=0.13,<0.14
 
 torch-scatter
 torch-sparse

@@ -1,6 +1,3 @@
-"""
-This module defines the logger used in the HappyRec framework.
-"""
 import os
 from logging import FileHandler, Logger, getLogger
 from pathlib import Path
