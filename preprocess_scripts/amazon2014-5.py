@@ -106,13 +106,11 @@ def process_interaction_frame(dataframe: pd.DataFrame) -> pd.DataFrame | Excepti
         dataframe[UID] = dataframe[UID].str.strip()
         dataframe[IID] = dataframe[IID].str.strip()
         dataframe[LABEL] = dataframe[LABEL].astype(np.float16).clip(1, 5)
-        dataframe["summary_review"] = dataframe["summary_review"].apply(clean_text)  # type: ignore # noqa: E501
-        dataframe["num_helpful_votes"] = dataframe["helpful"].apply(
+        dataframe["summary_review"] = dataframe["summary_review"].map(clean_text)
+        dataframe["num_helpful_votes"] = dataframe["helpful"].map(
             operator.itemgetter(0)
         )
-        dataframe["num_total_votes"] = dataframe["helpful"].apply(
-            operator.itemgetter(1)
-        )
+        dataframe["num_total_votes"] = dataframe["helpful"].map(operator.itemgetter(1))
         return dataframe
     except Exception as e:
         return e
@@ -176,12 +174,12 @@ def process_item_frame(
     _read_image = partial(read_image, image_dir)
     try:
         dataframe[IID] = dataframe[IID].str.strip()
-        dataframe["title"] = dataframe["title"].apply(clean_text)  # type: ignore
-        dataframe["brand"] = dataframe["brand"].apply(clean_text)  # type: ignore
-        dataframe["description"] = dataframe["description"].apply(clean_text)  # type: ignore # noqa: E501
-        images = dataframe["image"].apply(_read_image)  # type: ignore
-        dataframe["image"] = images.apply(operator.itemgetter(0))
-        dataframe["image_url"] = images.apply(operator.itemgetter(1))
+        dataframe["title"] = dataframe["title"].map(clean_text)
+        dataframe["brand"] = dataframe["brand"].map(clean_text)
+        dataframe["description"] = dataframe["description"].map(clean_text)
+        images = dataframe["image"].map(_read_image)
+        dataframe["image"] = images.map(operator.itemgetter(0))
+        dataframe["image_url"] = images.map(operator.itemgetter(1))
         return dataframe
     except Exception as e:
         return e
@@ -236,11 +234,6 @@ def preprocess(
     num_interactions: int | None = None,
     num_items: int | None = None,
 ) -> None:
-    """Preprocess the Amazon2014 dataset.
-
-    :param input_dir: The directory containing the raw data.
-    :param output_dir: The directory to save the preprocessed data.
-    """
     input_dir = Path(input_dir)
     image_dir = next(input_dir.glob("images_*"))
     output_dir = Path(output_dir)

@@ -103,6 +103,10 @@ def convert_image_to_array(path: str | PathLike) -> np.ndarray:
     return np.frombuffer(byteio.getvalue(), dtype=np.uint8)
 
 
+def convert_str_to_timestamp(series: pd.Series) -> pd.Series:
+    return pd.to_datetime(series).astype(int) // 10**9
+
+
 def parallelize(
     dataframe: pd.DataFrame, func: Callable[[pd.DataFrame], pd.DataFrame | Exception]
 ) -> pd.DataFrame:
