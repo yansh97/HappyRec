@@ -10,11 +10,12 @@ from happyrec.data.predefined_fields import FTYPES, IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.data import convert_dataframe_to_frame, create_data
 from happyrec.utils.logger import logger
 
-MOVIELENS_10M_DESCRIPTION = (
-    "MovieLens 1M movie ratings. Stable benchmark dataset. 10 million ratings from "
-    "72,000 users on 10,000 movies. Released 1/2009."
+MOVIELENS_20M_DESCRIPTION = (
+    "MovieLens 20M movie ratings. Stable benchmark dataset. 20 million ratings from "
+    "138,000 users on 27,000 movies. Released 4/2015; updated 10/2016 to update "
+    "links.csv."
 )
-MOVIELENS_10M_CITATION = (
+MOVIELENS_20M_CITATION = (
     "@article{harper2015movielens,\n"
     "  title={The movielens datasets: History and context},\n"
     "  author={Harper, F Maxwell and Konstan, Joseph A},\n"
@@ -26,11 +27,11 @@ MOVIELENS_10M_CITATION = (
     "  publisher={ACM New York, NY, USA}\n"
     "}"
 )
-MOVIELENS_10M_HOMEPAGE = "https://grouplens.org/datasets/movielens/10m/"
+MOVIELENS_20M_HOMEPAGE = "https://grouplens.org/datasets/movielens/20m/"
 
-RAW_MOVIELENS_10M_DIR = Path("~/Datasets/raw-data/movielens/10m").expanduser()
-MOVIELENS_10M_DIR = Path("~/Datasets/preprocessed-data/movielens/10m").expanduser()
-MOVIELENS_10M_DIR.mkdir(parents=True, exist_ok=True)
+RAW_MOVIELENS_20M_DIR = Path("~/Datasets/raw-data/movielens/20m").expanduser()
+MOVIELENS_20M_DIR = Path("~/Datasets/preprocessed-data/movielens/20m").expanduser()
+MOVIELENS_20M_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def clean_text(item: str | None) -> str | None:
@@ -46,9 +47,7 @@ def str_to_cate_seq(item: str | None) -> np.ndarray:
 
 
 def create_interaction_frame(interaction_file: Path) -> Frame:
-    interaction_frame = pd.read_csv(
-        interaction_file, sep="::", header=None, engine="python"
-    )
+    interaction_frame = pd.read_csv(interaction_file, sep=",")
     interaction_frame.columns = np.array([UID, IID, LABEL, TIMESTAMP])
 
     interaction_frame[LABEL] = interaction_frame[LABEL].astype(np.float16)
@@ -68,13 +67,19 @@ def create_interaction_frame(interaction_file: Path) -> Frame:
     )
 
 
-def create_item_frame(item_file: Path) -> Frame:
-    item_frame = pd.read_csv(item_file, sep="::", header=None, engine="python")
+def create_item_frame(item_file: Path, links_file: Path) -> Frame:
+    item_frame = pd.read_csv(item_file, sep=",")
     item_frame.columns = np.array([IID, "title", "genres"])
+    links_frame = pd.read_csv(links_file, sep=",", dtype="object")
+    links_frame.columns = np.array([IID, "imdb_id", "tmdb_id"])
+    links_frame[IID] = links_frame[IID].astype(np.int64)
+    links_frame["imdb_id"] = "tt" + links_frame["imdb_id"]
+    links_frame["tmdb_id"] = links_frame["tmdb_id"].fillna("-1").astype(np.int64)
 
     item_frame["title"] = item_frame["title"].map(clean_text)
     item_frame["genres"] = item_frame["genres"].map(str_to_cate_seq)
     item_frame["movielens_id"] = deepcopy(item_frame[IID])
+    item_frame = item_frame.merge(links_frame, on=IID, how="left")
 
     item_frame = item_frame.sort_values(
         by=IID, kind="stable", ignore_index=True
@@ -86,29 +91,33 @@ def create_item_frame(item_file: Path) -> Frame:
             "title": TextType(),
             "genres": CategoricalType(ItemType.SEQUENCE),
             "movielens_id": CategoricalType(ItemType.SCALAR),
+            "imdb_id": CategoricalType(ItemType.SCALAR),
+            "tmdb_id": CategoricalType(ItemType.SCALAR),
         },
         item_frame,
     )
 
 
 def preprocess() -> None:
-    interaction_frame = create_interaction_frame(RAW_MOVIELENS_10M_DIR / "ratings.dat")
-    item_frame = create_item_frame(RAW_MOVIELENS_10M_DIR / "movies.dat")
+    interaction_frame = create_interaction_frame(RAW_MOVIELENS_20M_DIR / "ratings.csv")
+    item_frame = create_item_frame(
+        RAW_MOVIELENS_20M_DIR / "movies.csv", RAW_MOVIELENS_20M_DIR / "links.csv"
+    )
 
     data = create_data(interaction_frame, None, item_frame)
 
     print(data)
     data.info()
-    data.to_npz(MOVIELENS_10M_DIR)
+    data.to_npz(MOVIELENS_20M_DIR)
 
     data_info = DataInfo.from_data_files(
-        MOVIELENS_10M_DIR,
-        description=MOVIELENS_10M_DESCRIPTION,
-        citation=MOVIELENS_10M_CITATION,
-        homepage=MOVIELENS_10M_HOMEPAGE,
+        MOVIELENS_20M_DIR,
+        description=MOVIELENS_20M_DESCRIPTION,
+        citation=MOVIELENS_20M_CITATION,
+        homepage=MOVIELENS_20M_HOMEPAGE,
     )
     print(data_info)
-    data_info.to_json(MOVIELENS_10M_DIR)
+    data_info.to_json(MOVIELENS_20M_DIR)
 
 
 if __name__ == "__main__":

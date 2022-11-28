@@ -1,4 +1,5 @@
 import logging
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -132,6 +133,7 @@ def create_item_frame(item_file: Path) -> Frame:
 
     item_frame["title"] = item_frame["title"].map(clean_text)
     item_frame["genres"] = item_frame["genres"].map(str_to_cate_seq)
+    item_frame["movielens_id"] = deepcopy(item_frame[IID])
 
     item_frame = item_frame.sort_values(
         by=IID, kind="stable", ignore_index=True
@@ -142,6 +144,7 @@ def create_item_frame(item_file: Path) -> Frame:
             IID: FTYPES[IID],
             "title": TextType(),
             "genres": CategoricalType(ItemType.SEQUENCE),
+            "movielens_id": CategoricalType(ItemType.SCALAR),
         },
         item_frame,
     )
