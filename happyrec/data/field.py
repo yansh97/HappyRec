@@ -309,9 +309,9 @@ class CategoricalType(FieldType):
                 raise ValueError("The field has invalid dtype.")
             if (
                 value.dtype == "object"
-                and np.vectorize(lambda x: x is None)(value).any()
+                and not np.vectorize(isinstance)(value, str).all()
             ):
-                raise ValueError("Some values of the field are None.")
+                raise ValueError("Some values of the field are not str.")
 
         if self.item_type == ItemType.SEQUENCE:
             if value.dtype != "object":
@@ -327,9 +327,11 @@ class CategoricalType(FieldType):
             concated_value = np.concatenate(value)
             if (
                 concated_value.dtype == "object"
-                and np.vectorize(lambda x: x is None)(concated_value).any()
+                and not np.vectorize(isinstance)(value, str).all()
             ):
-                raise ValueError("Some items of the field contain None.")
+                raise ValueError(
+                    "Some items of the field contain values other than str."
+                )
 
     def _downcast(self, value: np.ndarray) -> np.ndarray:
         helper = NumericType(self.item_type, ScalarType.INT)
