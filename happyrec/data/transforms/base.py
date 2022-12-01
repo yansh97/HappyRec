@@ -7,20 +7,18 @@ class DataTransform:
     """The base class of all data transforms."""
 
     def __call__(self, data: Data) -> Data:
-        """Check the data, transform the data and validate the transformed data.
+        """Transform the data and validate the transformed data.
 
         :param data: The data to be transformed.
         :return: The transformed data.
         """
-        self.check(data)
-        return self.transform(data).validate()
-
-    def check(self, data: Data) -> None:
-        """Check the data.
-
-        :param data: The data to be checked.
-        """
-        pass
+        if data.is_splitted:
+            raise ValueError("The data is already splitted.")
+        if data.has_eval_negative_samples:
+            raise ValueError("The data has already generated negative samples.")
+        data = self.transform(data)
+        data = data.validate()
+        return data
 
     def transform(self, data: Data) -> Data:
         """Transform the data.
@@ -41,13 +39,12 @@ class Compose(DataTransform):
         """
         self.transforms = list(transforms)
 
-    def __call__(self, data: Data) -> Data:
-        """Check the data, transform the data and validate the transformed data.
+    def transform(self, data: Data) -> Data:
+        """Transform the data.
 
         :param data: The data to be transformed.
         :return: The transformed data.
         """
         for transform in self.transforms:
-            transform.check(data)
             data = transform.transform(data)
-        return data.validate()
+        return data

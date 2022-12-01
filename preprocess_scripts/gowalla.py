@@ -36,7 +36,7 @@ GOWALLA_DIR.mkdir(parents=True, exist_ok=True)
 def create_interaction_and_item_frame(interaction_file: Path) -> tuple[Frame, Frame]:
     frame = pd.read_csv(interaction_file, sep="\t", header=None)
     frame.columns = np.array([UID, TIMESTAMP, "latitude", "longitude", IID])
-    frame[LABEL] = np.ones(len(frame.index), dtype=np.float16)
+    frame[LABEL] = np.ones(len(frame), dtype=np.float16)
 
     interaction_frame = frame[[UID, IID, LABEL, TIMESTAMP]].copy()
     interaction_frame[TIMESTAMP] = (

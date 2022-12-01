@@ -168,7 +168,7 @@ def filter_unused_uids_and_iids(
     user_frame: Frame | None = None,
     item_frame: Frame | None = None,
 ) -> tuple[Frame, Frame | None, Frame | None]:
-    array_in: Callable[[Any, np.ndarray], np.ndarray] = np.vectorize(operator.contains)
+    array_in: Callable[[set, np.ndarray], np.ndarray] = np.vectorize(operator.contains)
 
     interaction_mask = np.full(interaction_frame.num_elements, True)
     num_interactions = interaction_frame.num_elements
