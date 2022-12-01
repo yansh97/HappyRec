@@ -223,7 +223,7 @@ class Data:
                     fields[source].append(field)
         return fields
 
-    def validate(self) -> "Data":
+    def validate(self) -> "Data":  # noqa: C901
         """Validate the data.
 
         :raises ValueError: If the data is invalid.
@@ -238,6 +238,14 @@ class Data:
                     raise ValueError(
                         f"Invalid field type of field {field} in {source} frame."
                     )
+
+        # validate the names of the context fields
+        context_fields: set[str] = set()
+        for source, fields in self.context_fields.items():
+            for field in fields:
+                if field in context_fields:
+                    raise ValueError(f"Duplicate context field {field} in data.")
+                context_fields.add(field)
 
         # validate the uids and iids
         interaction_uids_set = set(self.frames[Source.INTERACTION][UID].value)
