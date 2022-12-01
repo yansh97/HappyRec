@@ -4,12 +4,9 @@
 wheel
 tqdm
 rich
-pyyaml
 
 numpy
 pandas
-pyarrow
-polars
 
 torch>=1.12,<1.13
 torchvision>=0.13,<0.14
@@ -21,7 +18,6 @@ torch-spline-conv
 torch-geometric
 
 transformers
-datasets
 
 jsonargparse[signatures]
 pytorch-lightning
