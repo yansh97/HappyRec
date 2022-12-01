@@ -344,7 +344,7 @@ class CategoricalType(FieldType):
                 concated_value = np.concatenate(value)
                 if concated_value.dtype == "object":
                     return value
-                return helper._downcast(concated_value)
+                return helper._downcast(value)
 
     def _to_str_array(self, value: np.ndarray) -> np.ndarray:
         helper = NumericType(self.item_type, ScalarType.INT)
