@@ -136,7 +136,7 @@ def parallelize(
 
 def convert_dataframe_to_frame(
     ftypes: dict[str, FieldType], dataframe: pd.DataFrame
-) -> "Frame":
+) -> Frame:
     """Convert a Pandas DataFrame to a frame.
 
     :param ftypes: The field types of the frame.

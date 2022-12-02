@@ -39,32 +39,14 @@ def str_to_cate_seq(item: str | None) -> np.ndarray:
 
 def create_interaction_frame(interaction_file: Path) -> Frame:
     interaction_frame = pd.read_csv(interaction_file, sep="\t")
-    interaction_frame.columns = np.array([UID, IID, "interaction_type", TIMESTAMP])
+    interaction_frame.columns = np.array([UID, IID, LABEL, TIMESTAMP])
 
-    interaction_frame["interaction_type"] = interaction_frame["interaction_type"].map(
-        {
-            0: "impression",
-            1: "clicked",
-            2: "bookmarked",
-            3: "replied",
-            4: "delete",
-            5: "recruiter interest",
-        }
-    )
-    interaction_frame[LABEL] = interaction_frame["interaction_type"].map(
-        {
-            "impression": 0.0,
-            "clicked": 1.0,
-            "bookmarked": 5.0,
-            "replied": 5.0,
-            "delete": -10.0,
-            "recruiter interest": 20.0,
-        }
-    )
+    interaction_frame[LABEL][interaction_frame[LABEL] == 4] = -4
+    interaction_frame[LABEL] = interaction_frame[LABEL].astype(np.float16)
 
-    interaction_frame = interaction_frame[
-        [UID, IID, LABEL, TIMESTAMP, "interaction_type"]
-    ].sort_values(by=TIMESTAMP, kind="stable", ignore_index=True)
+    interaction_frame = interaction_frame.sort_values(
+        by=TIMESTAMP, kind="stable", ignore_index=True
+    )
 
     return convert_dataframe_to_frame(
         {
@@ -72,7 +54,6 @@ def create_interaction_frame(interaction_file: Path) -> Frame:
             IID: FTYPES[IID],
             LABEL: FTYPES[LABEL],
             TIMESTAMP: FTYPES[TIMESTAMP],
-            "interaction_type": CategoricalType(ItemType.SCALAR),
         },
         interaction_frame,
     )
