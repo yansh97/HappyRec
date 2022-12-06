@@ -1,42 +1,7 @@
-from collections.abc import Mapping, MutableMapping, MutableSequence, Sequence
-from typing import Any, TypeGuard, TypeVar, overload
+from collections.abc import Mapping, MutableMapping, MutableSequence
+from typing import Any, overload
 
 from jsonargparse import Namespace
-
-IT = TypeVar("IT")
-KT = TypeVar("KT")
-VT = TypeVar("VT")
-
-
-def is_typed_sequence(
-    sequence: Sequence[IT], item_type: type[IT]
-) -> TypeGuard[Sequence[IT]]:
-    """Check if the object is a sequence of the specified type.
-
-    :param sequence: The sequence to check.
-    :param item_type: The type of the items in the sequence.
-    :return: Whether the object is a sequence of the specified type.
-    """
-    if not isinstance(sequence, Sequence):
-        return False
-    return all(isinstance(item, item_type) for item in sequence)
-
-
-def is_typed_mapping(
-    mapping: Mapping[KT, VT], key_type: type[KT], value_type: type[VT]
-) -> TypeGuard[Mapping[KT, VT]]:
-    """Check if the object is a mapping of the specified key and value types.
-
-    :param mapping: The object to check.
-    :param key_type: The type of the keys in the mapping.
-    :param value_type: The type of the values in the mapping.
-    :return: Whether the object is a mapping of the specified key and value types.
-    """
-    if not isinstance(mapping, Mapping):
-        return False
-    return all(isinstance(key, key_type) for key in mapping.keys()) and all(
-        isinstance(value, value_type) for value in mapping.values()
-    )
 
 
 def instantiate_class(

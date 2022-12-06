@@ -11,19 +11,10 @@ import pandas as pd
 from PIL import Image
 from rich.progress import track
 
-from ..data import (
-    CategoricalType,
-    Data,
-    Field,
-    FieldType,
-    Frame,
-    ImageType,
-    ItemType,
-    NumericType,
-    ObjectType,
-    TextType,
-)
+from ..data import Data, Field, FieldType, Frame
+from ..data.field_types import FixedSizeListFtype, ListFtype, ScalarFtype
 from ..data.predefined_fields import FTYPES, IID, UID
+from .asserts import assert_never_type
 from .logger import logger
 
 
@@ -145,20 +136,16 @@ def convert_dataframe_to_frame(
     """
     fields: dict[str, Field] = {}
     for name, ftype in ftypes.items():
-        if isinstance(ftype, TextType | ImageType | ObjectType):
+        if isinstance(ftype, ScalarFtype):
             value = dataframe[name].to_numpy()
-        elif isinstance(ftype, NumericType | CategoricalType):
-            match ftype.item_type:
-                case ItemType.SCALAR:
-                    value = dataframe[name].to_numpy()
-                case ItemType.ARRAY:
-                    value = np.vstack(dataframe[name])  # type: ignore
-                case ItemType.SEQUENCE:
-                    value = np.fromiter(
-                        dataframe[name], dtype=np.object_, count=len(dataframe[name])
-                    )
+        elif isinstance(ftype, FixedSizeListFtype):
+            value = np.vstack(dataframe[name])  # type: ignore
+        elif isinstance(ftype, ListFtype):
+            value = np.fromiter(
+                dataframe[name], dtype=object, count=len(dataframe[name])
+            )
         else:
-            raise ValueError(f"Unknown field type {ftype}")
+            assert_never_type(ftype)
         fields[name] = Field(ftype, value)
     return Frame(fields)
 
@@ -206,7 +193,7 @@ def create_default_user_frame(interaction_frame: Frame) -> Frame:
     :return: The user frame.
     """
     uid_value = np.sort(np.unique(interaction_frame[UID].value), kind="stable")
-    return Frame({UID: Field(ftype=FTYPES[UID], value=uid_value)})
+    return Frame({UID: Field(FTYPES[UID], uid_value)})
 
 
 def create_default_item_frame(interaction_frame: Frame) -> Frame:
@@ -216,7 +203,7 @@ def create_default_item_frame(interaction_frame: Frame) -> Frame:
     :return: The item frame.
     """
     iid_value = np.sort(np.unique(interaction_frame[IID].value), kind="stable")
-    return Frame({IID: Field(ftype=FTYPES[IID], value=iid_value)})
+    return Frame({IID: Field(FTYPES[IID], iid_value)})
 
 
 def create_data(
@@ -242,8 +229,7 @@ def create_data(
         item_frame = create_default_item_frame(interaction_frame)
 
     data = Data(interaction_frame, user_frame, item_frame)
-    for frame in data.frames.values():
-        frame.downcast()
-    data = data.validate()
+    data = data.downcast()
+    data.validate()
 
     return data

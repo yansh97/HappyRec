@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 from selectolax.parser import HTMLParser
 
-from happyrec.data import DataInfo, Frame, ImageType, TextType
-from happyrec.data.predefined_fields import FTYPES, IID, LABEL, TIMESTAMP, UID
+from happyrec.data import DataInfo, Frame
+from happyrec.data import field_types as ftp
+from happyrec.data.predefined_fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.data import (
     convert_dataframe_to_frame,
     convert_image_to_array,
@@ -147,11 +148,11 @@ def create_interaction_frame(
 
     return convert_dataframe_to_frame(
         {
-            UID: FTYPES[UID],
-            IID: FTYPES[IID],
-            LABEL: FTYPES[LABEL],
-            TIMESTAMP: FTYPES[TIMESTAMP],
-            "summary_review": TextType(),
+            UID: ftp.category(),
+            IID: ftp.category(),
+            LABEL: ftp.float_(),
+            TIMESTAMP: ftp.int_(),
+            "summary_review": ftp.string(),
         },
         interaction_frame,
     )
@@ -206,12 +207,12 @@ def create_item_frame(
 
     return convert_dataframe_to_frame(
         {
-            IID: FTYPES[IID],
-            "title": TextType(),
-            "brand": TextType(),
-            "description": TextType(),
-            "image": ImageType(),
-            "image_url": TextType(),
+            IID: ftp.category(),
+            "title": ftp.string(),
+            "brand": ftp.string(),
+            "description": ftp.string(),
+            "image": ftp.image(),
+            "image_url": ftp.string(),
         },
         item_frame,
     )
@@ -239,7 +240,7 @@ def preprocess(
 
     print(data)
     data.info()
-    data.to_npz(output_dir)
+    data.to_pickle(output_dir)
 
     data_info = DataInfo.from_data_files(
         output_dir,

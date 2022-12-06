@@ -7,18 +7,9 @@ from typing import Any
 
 import pandas as pd
 
+from ..utils.asserts import assert_type
 from ..utils.file import checksum, compress
 from ..utils.logger import logger
-from .field import (  # noqa: F401
-    CategoricalType,
-    FieldType,
-    ImageType,
-    ItemType,
-    NumericType,
-    ObjectType,
-    ScalarType,
-    TextType,
-)
 from .frame import Frame
 from .predefined_fields import (
     FTYPES,
@@ -105,10 +96,10 @@ class Partition(Enum):
                 return TEST_NEG_IIDS
 
 
-_FRAMES_NPZ = {
-    Source.INTERACTION: "interaction_frame.npz",
-    Source.USER: "user_frame.npz",
-    Source.ITEM: "item_frame.npz",
+_FRAMES_PICKLE = {
+    Source.INTERACTION: "interaction_frame.pickle",
+    Source.USER: "user_frame.pickle",
+    Source.ITEM: "item_frame.pickle",
 }
 _FRAMES_CSV = {
     Source.INTERACTION: "interaction_frame.csv",
@@ -118,8 +109,6 @@ _FRAMES_CSV = {
 
 
 class Data:
-    """Data is used to store the interaction, user, and item frame."""
-
     __slots__ = ("frames",)
 
     def __init__(
@@ -131,7 +120,9 @@ class Data:
         :param user_frame: The user frame.
         :param item_frame: The item frame.
         """
-        super().__init__()
+        assert_type(interaction_frame, Frame)
+        assert_type(user_frame, Frame)
+        assert_type(item_frame, Frame)
 
         self.frames: dict[Source, Frame] = {
             Source.INTERACTION: interaction_frame,
@@ -223,7 +214,7 @@ class Data:
                     fields[source].append(field)
         return fields
 
-    def validate(self) -> "Data":  # noqa: C901
+    def validate(self) -> None:  # noqa: C901
         """Validate the data.
 
         :raises ValueError: If the data is invalid.
@@ -264,10 +255,15 @@ class Data:
             )
 
         # validate the frames
-        for frame in self.frames.values():
+        for _, frame in self.frames.items():
             frame.validate()
 
-        return self
+    def downcast(self) -> "Data":
+        return Data(
+            interaction_frame=self.frames[Source.INTERACTION].downcast(),
+            user_frame=self.frames[Source.USER].downcast(),
+            item_frame=self.frames[Source.ITEM].downcast(),
+        )
 
     def __str__(self) -> str:
         return "\n".join(
@@ -309,8 +305,8 @@ class Data:
         print(f"Context fields of items: {self.context_fields[Source.ITEM]}")
         print(self.frames[Source.ITEM].describe())
 
-    def to_npz(self, path: str | PathLike) -> None:
-        """Save the data to npz files.
+    def to_pickle(self, path: str | PathLike) -> None:
+        """Save the data to pickle files.
 
         :param path: The directory to save the data.
         """
@@ -318,20 +314,20 @@ class Data:
         logger.info(f"Saving data to {path} ...")
         path.mkdir(parents=True, exist_ok=True)
         for source, frame in self.frames.items():
-            frame.to_npz(path / _FRAMES_NPZ[source])
+            frame.to_pickle(path / _FRAMES_PICKLE[source])
 
     @classmethod
-    def from_npz(cls, path: str | PathLike) -> "Data":
-        """Load the data from npz files.
+    def from_pickle(cls, path: str | PathLike) -> "Data":
+        """Load the data from pickle files.
 
         :param path: The directory to load the data.
         :return: The loaded data.
         """
         path = Path(path)
         logger.info(f"Loading data from {path} ...")
-        interaction_frame = Frame.from_npz(path / _FRAMES_NPZ[Source.INTERACTION])
-        user_frame = Frame.from_npz(path / _FRAMES_NPZ[Source.USER])
-        item_frame = Frame.from_npz(path / _FRAMES_NPZ[Source.ITEM])
+        interaction_frame = Frame.from_pickle(path / _FRAMES_PICKLE[Source.INTERACTION])
+        user_frame = Frame.from_pickle(path / _FRAMES_PICKLE[Source.USER])
+        item_frame = Frame.from_pickle(path / _FRAMES_PICKLE[Source.ITEM])
         return cls(interaction_frame, user_frame, item_frame)
 
     def to_csv(self, path: str | PathLike) -> None:
@@ -346,10 +342,10 @@ class Data:
             frame.to_csv(path / _FRAMES_CSV[source])
 
 
-_FRAMES_NPZ_XZ = {
-    Source.INTERACTION: "interaction_frame.npz.xz",
-    Source.USER: "user_frame.npz.xz",
-    Source.ITEM: "item_frame.npz.xz",
+_FRAMES_PICKLE_XZ = {
+    Source.INTERACTION: "interaction_frame.pickle.xz",
+    Source.USER: "user_frame.pickle.xz",
+    Source.ITEM: "item_frame.pickle.xz",
 }
 _DATA_INFO_JSON = "data_info.json"
 
@@ -417,7 +413,7 @@ class DataInfo:
         """
         path = Path(path)
         logger.info(f"Creating data information from {path} ...")
-        data = Data.from_npz(path)
+        data = Data.from_pickle(path)
 
         num_elements: dict[str, int] = {
             source.value: num for source, num in data.num_elements.items()
@@ -437,17 +433,17 @@ class DataInfo:
 
         files_size: dict[str, int] = {}
         files_checksum: dict[str, str] = {}
-        for source, filename in _FRAMES_NPZ.items():
+        for source, filename in _FRAMES_PICKLE.items():
             file_path = path / filename
             files_size[source.value] = file_path.stat().st_size
             files_checksum[source.value] = checksum(file_path)
 
         compressed_files_size: dict[str, int] = {}
         compressed_files_checksum: dict[str, str] = {}
-        for source, filename in _FRAMES_NPZ_XZ.items():
+        for source, filename in _FRAMES_PICKLE_XZ.items():
             compressed_file_path = path / filename
             if not compressed_file_path.exists():
-                file_path = path / _FRAMES_NPZ[source]
+                file_path = path / _FRAMES_PICKLE[source]
                 compress(file_path, compressed_file_path)
             compressed_files_size[source.value] = compressed_file_path.stat().st_size
             compressed_files_checksum[source.value] = checksum(compressed_file_path)

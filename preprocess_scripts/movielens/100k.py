@@ -4,16 +4,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from happyrec.data import (
-    CategoricalType,
-    DataInfo,
-    Frame,
-    ItemType,
-    NumericType,
-    ScalarType,
-    TextType,
-)
-from happyrec.data.predefined_fields import FTYPES, IID, LABEL, TIMESTAMP, UID
+from happyrec.data import DataInfo, Frame
+from happyrec.data import field_types as ftp
+from happyrec.data.predefined_fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.data import convert_dataframe_to_frame, create_data
 from happyrec.utils.logger import logger
 
@@ -58,10 +51,10 @@ def create_interaction_frame(interaction_file: Path) -> Frame:
 
     return convert_dataframe_to_frame(
         {
-            UID: FTYPES[UID],
-            IID: FTYPES[IID],
-            LABEL: FTYPES[LABEL],
-            TIMESTAMP: FTYPES[TIMESTAMP],
+            UID: ftp.category(),
+            IID: ftp.category(),
+            LABEL: ftp.float_(),
+            TIMESTAMP: ftp.int_(),
         },
         interaction_frame,
     )
@@ -77,11 +70,11 @@ def create_user_frame(user_file: Path) -> Frame:
 
     return convert_dataframe_to_frame(
         {
-            UID: FTYPES[UID],
-            "age": NumericType(ItemType.SCALAR, ScalarType.INT),
-            "gender": CategoricalType(ItemType.SCALAR),
-            "occupation": CategoricalType(ItemType.SCALAR),
-            "zip_code": CategoricalType(ItemType.SCALAR),
+            UID: ftp.category(),
+            "age": ftp.int_(),
+            "gender": ftp.category(),
+            "occupation": ftp.category(),
+            "zip_code": ftp.category(),
         },
         user_frame,
     )
@@ -140,10 +133,10 @@ def create_item_frame(item_file: Path) -> Frame:
 
     return convert_dataframe_to_frame(
         {
-            IID: FTYPES[IID],
-            "title": TextType(),
-            "release_date": TextType(),
-            "genres": CategoricalType(ItemType.SEQUENCE),
+            IID: ftp.category(),
+            "title": ftp.string(),
+            "release_date": ftp.string(),
+            "genres": ftp.list_(ftp.category()),
         },
         item_frame,
     )
@@ -158,7 +151,7 @@ def preprocess() -> None:
 
     print(data)
     data.info()
-    data.to_npz(MOVIELENS_100K_DIR)
+    data.to_pickle(MOVIELENS_100K_DIR)
 
     data_info = DataInfo.from_data_files(
         MOVIELENS_100K_DIR,
