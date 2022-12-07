@@ -116,7 +116,6 @@ def preprocess() -> None:
         citation=MOVIELENS_25M_CITATION,
         homepage=MOVIELENS_25M_HOMEPAGE,
     )
-    print(data_info)
     data_info.to_json(MOVIELENS_25M_DIR)
 
 

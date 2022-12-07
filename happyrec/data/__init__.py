@@ -1,9 +1,16 @@
-from .data import Data, DataInfo, Partition, Source
-from .field import Field
-from .field_types import FieldType
-from .frame import Frame
+from .core import (
+    Data,
+    DataInfo,
+    ElementType,
+    Field,
+    FieldType,
+    Frame,
+    Partition,
+    Source,
+)
 
 __all__ = [
+    "ElementType",
     "FieldType",
     "Field",
     "Frame",

@@ -43,8 +43,6 @@ def create_interaction_frame(interaction_file: Path) -> Frame:
     interaction_frame = pd.read_csv(interaction_file, sep="\t", header=None)
     interaction_frame.columns = np.array([UID, IID, LABEL, TIMESTAMP])
 
-    interaction_frame[LABEL] = interaction_frame[LABEL].astype(np.float16)
-
     interaction_frame = interaction_frame.sort_values(
         by=TIMESTAMP, kind="stable", ignore_index=True
     ).drop_duplicates(subset=[UID, IID], keep="first", ignore_index=True)
@@ -53,7 +51,7 @@ def create_interaction_frame(interaction_file: Path) -> Frame:
         {
             UID: ftp.category(),
             IID: ftp.category(),
-            LABEL: ftp.float_(),
+            LABEL: ftp.int_(),
             TIMESTAMP: ftp.int_(),
         },
         interaction_frame,
@@ -159,7 +157,6 @@ def preprocess() -> None:
         citation=MOVIELENS_100K_CITATION,
         homepage=MOVIELENS_100K_HOMEPAGE,
     )
-    print(data_info)
     data_info.to_json(MOVIELENS_100K_DIR)
 
 

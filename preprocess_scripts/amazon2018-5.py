@@ -120,7 +120,7 @@ def process_interaction_frame(dataframe: pd.DataFrame) -> pd.DataFrame | Excepti
     try:
         dataframe[UID] = dataframe[UID].str.strip()
         dataframe[IID] = dataframe[IID].str.strip()
-        dataframe[LABEL] = dataframe[LABEL].astype(np.float16).clip(1, 5)
+        dataframe[LABEL] = dataframe[LABEL].astype(np.int8).clip(1, 5)
         dataframe["summary_review"] = dataframe["summary_review"].map(clean_text)
         return dataframe
     except Exception as e:
@@ -150,7 +150,7 @@ def create_interaction_frame(
         {
             UID: ftp.category(),
             IID: ftp.category(),
-            LABEL: ftp.float_(),
+            LABEL: ftp.int_(),
             TIMESTAMP: ftp.int_(),
             "summary_review": ftp.string(),
         },
@@ -248,7 +248,6 @@ def preprocess(
         citation=AMAZON_2018_CITATION,
         homepage=AMAZON_2018_HOMEPAGE,
     )
-    print(data_info)
     data_info.to_json(output_dir)
 
 

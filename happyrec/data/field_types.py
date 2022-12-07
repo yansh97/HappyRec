@@ -4,6 +4,7 @@ import numpy as np
 
 from ..constants import SEQ_SEP
 from ..utils.asserts import assert_type
+from .core import ElementType, FieldType
 
 
 def _assert_1d_array(array: np.ndarray) -> None:
@@ -16,36 +17,6 @@ def _get_smallest_int_dtype(min_value: int, max_value: int) -> str:
         if np.iinfo(dtype).min <= min_value and np.iinfo(dtype).max >= max_value:
             return dtype
     raise ValueError
-
-
-@dataclass(frozen=True, slots=True)
-class ElementType:
-    def __str__(self) -> str:
-        raise NotImplementedError
-
-    def _can_be_nested(self) -> bool:
-        raise NotImplementedError
-
-    def _can_hold_null(self) -> bool:
-        raise NotImplementedError
-
-    def _non_null_count(self, array: np.ndarray) -> int:
-        raise NotImplementedError
-
-    def _mean(self, array: np.ndarray) -> float | None:
-        raise NotImplementedError
-
-    def _min(self, array: np.ndarray) -> bool | int | float | str | None:
-        raise NotImplementedError
-
-    def _max(self, array: np.ndarray) -> bool | int | float | str | None:
-        raise NotImplementedError
-
-    def _check_value_data(self, array: np.ndarray, dtype: str) -> None:
-        raise NotImplementedError
-
-    def _to_str_array(self, array: np.ndarray) -> np.ndarray:
-        raise NotImplementedError
 
 
 @dataclass(frozen=True, slots=True)
@@ -352,55 +323,6 @@ class ObjectEtype(ElementType):
 
 
 @dataclass(frozen=True, slots=True)
-class FieldType:
-    element_type: ElementType
-
-    def __post_init__(self) -> None:
-        assert_type(self.element_type, ElementType)
-
-    @property
-    def name(self) -> str:
-        raise NotImplementedError
-
-    def __str__(self) -> str:
-        return self.name
-
-    def _dtype(self, value: np.ndarray) -> str:
-        raise NotImplementedError
-
-    def _shape(self, value: np.ndarray) -> tuple:
-        raise NotImplementedError
-
-    def _non_null_count(self, value: np.ndarray) -> int:
-        raise NotImplementedError
-
-    def _mean(self, value: np.ndarray) -> float | None:
-        raise NotImplementedError
-
-    def _min(self, value: np.ndarray) -> bool | int | float | str | None:
-        raise NotImplementedError
-
-    def _max(self, value: np.ndarray) -> bool | int | float | str | None:
-        raise NotImplementedError
-
-    def _check_value_shape(self, value: np.ndarray) -> None:
-        raise NotImplementedError
-
-    def _check_value_dtype(self, value: np.ndarray) -> None:
-        raise NotImplementedError
-
-    def _validate(self, value: np.ndarray) -> None:
-        self._check_value_shape(value)
-        self._check_value_dtype(value)
-
-    def _downcast(self, value: np.ndarray) -> np.ndarray:
-        raise NotImplementedError
-
-    def _to_str_array(self, value: np.ndarray) -> np.ndarray:
-        raise NotImplementedError
-
-
-@dataclass(frozen=True, slots=True)
 class ScalarFtype(FieldType):
     @property
     def name(self) -> str:
@@ -451,14 +373,18 @@ class ScalarFtype(FieldType):
 
 @dataclass(frozen=True, slots=True)
 class FixedSizeListFtype(FieldType):
+    length: int
+
     def __post_init__(self) -> None:
         FieldType.__post_init__(self)
         if not self.element_type._can_be_nested():
             raise ValueError
+        if self.length <= 0:
+            raise ValueError
 
     @property
     def name(self) -> str:
-        return f"fixed_size_list<{self.element_type}>"
+        return f"list<{self.element_type}, {self.length}>"
 
     def _dtype(self, value: np.ndarray) -> str:
         return str(value.dtype)
@@ -484,6 +410,8 @@ class FixedSizeListFtype(FieldType):
         if len(value) == 0:
             raise ValueError
         if value.ndim != 2:
+            raise ValueError
+        if value.shape[1] != self.length:
             raise ValueError
 
     def _check_value_dtype(self, value: np.ndarray) -> None:
@@ -619,11 +547,8 @@ def object_() -> FieldType:
     return ScalarFtype(ObjectEtype())
 
 
-def fixed_size_list(type_: FieldType) -> FieldType:
+def list_(type_: FieldType, length: int | None = None) -> FieldType:
     assert_type(type_, ScalarFtype)
-    return FixedSizeListFtype(type_.element_type)
-
-
-def list_(type_: FieldType) -> FieldType:
-    assert_type(type_, ScalarFtype)
-    return ListFtype(type_.element_type)
+    if length is None:
+        return ListFtype(type_.element_type)
+    return FixedSizeListFtype(type_.element_type, length)

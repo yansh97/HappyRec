@@ -37,7 +37,7 @@ GOWALLA_DIR.mkdir(parents=True, exist_ok=True)
 def create_interaction_and_item_frame(interaction_file: Path) -> tuple[Frame, Frame]:
     frame = pd.read_csv(interaction_file, sep="\t", header=None)
     frame.columns = np.array([UID, TIMESTAMP, "latitude", "longitude", IID])
-    frame[LABEL] = np.ones(len(frame), dtype=np.float16)
+    frame[LABEL] = np.ones(len(frame), dtype=np.int8)
 
     interaction_frame = frame[[UID, IID, LABEL, TIMESTAMP]].copy()
     interaction_frame[TIMESTAMP] = (
@@ -48,8 +48,8 @@ def create_interaction_and_item_frame(interaction_file: Path) -> tuple[Frame, Fr
     )
 
     item_frame = frame[[IID, "latitude", "longitude"]].copy()
-    item_frame["latitude"] = item_frame["latitude"].clip(-90, 90)
-    item_frame["longitude"] = item_frame["longitude"].clip(-180, 180)
+    item_frame["latitude"] = item_frame["latitude"].clip(-90, 90).astype(np.float32)
+    item_frame["longitude"] = item_frame["longitude"].clip(-180, 180).astype(np.float32)
     item_frame = item_frame.drop_duplicates(
         subset=IID, keep="first", ignore_index=True
     ).sort_values(by=IID, kind="stable", ignore_index=True)
@@ -58,7 +58,7 @@ def create_interaction_and_item_frame(interaction_file: Path) -> tuple[Frame, Fr
         {
             UID: ftp.category(),
             IID: ftp.category(),
-            LABEL: ftp.float_(),
+            LABEL: ftp.int_(),
             TIMESTAMP: ftp.int_(),
         },
         interaction_frame,
@@ -89,7 +89,6 @@ def preprocess() -> None:
         citation=GOWALLA_CITATION,
         homepage=GOWALLA_HOMEPAGE,
     )
-    print(data_info)
     data_info.to_json(GOWALLA_DIR)
 
 

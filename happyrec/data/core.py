@@ -1,18 +1,26 @@
+import copy
 import json
+import pickle
+from collections.abc import Iterator, MutableMapping, Sequence
 from dataclasses import asdict, dataclass
 from enum import Enum, unique
 from os import PathLike
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
+import numpy as np
 import pandas as pd
 
-from ..utils.asserts import assert_type
+from ..constants import FIELD_SEP
+from ..utils.asserts import (
+    assert_never_type,
+    assert_type,
+    assert_typed_dict,
+    assert_typed_list,
+)
 from ..utils.file import checksum, compress
 from ..utils.logger import logger
-from .frame import Frame
 from .predefined_fields import (
-    FTYPES,
     IID,
     LABEL,
     POP_PROB,
@@ -27,6 +35,423 @@ from .predefined_fields import (
     VAL_MASK,
     VAL_NEG_IIDS,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ElementType:
+    def __str__(self) -> str:
+        raise NotImplementedError
+
+    def _can_be_nested(self) -> bool:
+        raise NotImplementedError
+
+    def _can_hold_null(self) -> bool:
+        raise NotImplementedError
+
+    def _non_null_count(self, array: np.ndarray) -> int:
+        raise NotImplementedError
+
+    def _mean(self, array: np.ndarray) -> float | None:
+        raise NotImplementedError
+
+    def _min(self, array: np.ndarray) -> bool | int | float | str | None:
+        raise NotImplementedError
+
+    def _max(self, array: np.ndarray) -> bool | int | float | str | None:
+        raise NotImplementedError
+
+    def _check_value_data(self, array: np.ndarray, dtype: str) -> None:
+        raise NotImplementedError
+
+    def _to_str_array(self, array: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+
+@dataclass(frozen=True, slots=True)
+class FieldType:
+    element_type: ElementType
+
+    def __post_init__(self) -> None:
+        assert_type(self.element_type, ElementType)
+
+    @property
+    def name(self) -> str:
+        raise NotImplementedError
+
+    def __str__(self) -> str:
+        return self.name
+
+    def _dtype(self, value: np.ndarray) -> str:
+        raise NotImplementedError
+
+    def _shape(self, value: np.ndarray) -> tuple:
+        raise NotImplementedError
+
+    def _non_null_count(self, value: np.ndarray) -> int:
+        raise NotImplementedError
+
+    def _mean(self, value: np.ndarray) -> float | None:
+        raise NotImplementedError
+
+    def _min(self, value: np.ndarray) -> bool | int | float | str | None:
+        raise NotImplementedError
+
+    def _max(self, value: np.ndarray) -> bool | int | float | str | None:
+        raise NotImplementedError
+
+    def _check_value_shape(self, value: np.ndarray) -> None:
+        raise NotImplementedError
+
+    def _check_value_dtype(self, value: np.ndarray) -> None:
+        raise NotImplementedError
+
+    def _validate(self, value: np.ndarray) -> None:
+        self._check_value_shape(value)
+        self._check_value_dtype(value)
+
+    def _downcast(self, value: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+    def _to_str_array(self, value: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+
+@dataclass(eq=False, slots=True)
+class Field(Sequence):
+    _ftype: FieldType
+    _value: np.ndarray
+
+    def __post_init__(self) -> None:
+        assert_type(self._ftype, FieldType)
+        assert_type(self._value, np.ndarray)
+        self._ftype._check_value_shape(self._value)
+
+    # implement object methods
+
+    def __str__(self) -> str:
+        return f"{self._ftype}{list(self.shape())}"
+
+    def __copy__(self) -> "Field":
+        return Field(copy.copy(self._ftype), copy.copy(self._value))
+
+    def __deepcopy__(self, memo=None) -> "Field":
+        return Field(copy.deepcopy(self._ftype), copy.deepcopy(self._value))
+
+    # implement Sequence methods
+
+    def __len__(self) -> int:
+        return len(self._value)
+
+    def __getitem__(self, index: int) -> Any:
+        return self._value[index]
+
+    def __contains__(self, value) -> bool:
+        for v in self:
+            if v is value or v == value:
+                return True
+        return False
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._value)
+
+    def __reversed__(self) -> Iterator[Any]:
+        return reversed(self._value)
+
+    def index(self, value, start: int = 0, stop: int | None = None) -> int:
+        if start < 0:
+            start = max(len(self) + start, 0)
+        if stop is None:
+            stop = len(self)
+        elif stop < 0:
+            stop += len(self)
+
+        for i in range(start, stop):
+            v = self[i]
+            if v is value or v == value:
+                return i
+        raise ValueError
+
+    def count(self, value):
+        return sum(1 for v in self if v is value or v == value)
+
+    # Field properties
+
+    @property
+    def ftype(self) -> FieldType:
+        return self._ftype
+
+    @property
+    def value(self) -> np.ndarray:
+        return self._value
+
+    class Loc:
+        def __init__(self, field: "Field") -> None:
+            self.field = field
+
+        def __getitem__(
+            self, index: slice | list[int] | list[bool] | np.ndarray
+        ) -> "Field":
+            if isinstance(index, slice):
+                return Field(self.field._ftype, self.field._value[index].copy())
+            if (
+                assert_typed_list(index, int)
+                or assert_typed_list(index, bool)
+                or isinstance(index, np.ndarray)
+            ):
+                return Field(self.field._ftype, self.field._value[index])
+            assert_never_type(index)
+
+    @property
+    def loc(self) -> Loc:
+        return self.Loc(self)
+
+    # Field methods
+
+    def dtype(self) -> str:
+        return self._ftype._dtype(self._value)
+
+    def shape(self) -> tuple:
+        return self._ftype._shape(self._value)
+
+    def non_null_count(self) -> int:
+        return self._ftype._non_null_count(self._value)
+
+    def mean(self) -> float | None:
+        return self._ftype._mean(self._value)
+
+    def min(self) -> bool | int | float | str | None:
+        return self._ftype._min(self._value)
+
+    def max(self) -> bool | int | float | str | None:
+        return self._ftype._max(self._value)
+
+    def validate(self) -> None:
+        self._ftype._validate(self._value)
+
+    def downcast(self) -> "Field":
+        return Field(self._ftype, self._ftype._downcast(self._value))
+
+    def _to_str_array(self) -> np.ndarray:
+        return self._ftype._to_str_array(self._value)
+
+    def _info(self) -> dict[str, Any]:
+        ret = {
+            "field type": str(self._ftype),
+            "dtype": self.dtype(),
+            "shape": self.shape(),
+            "non-null count": self.non_null_count(),
+            "mean": self.mean(),
+            "min": self.min(),
+            "max": self.max(),
+        }
+        return ret
+
+
+@dataclass(eq=False, slots=True)
+class Frame(MutableMapping[str, Field]):
+    _fields: dict[str, Field]
+
+    def __post_init__(self) -> None:
+        if not assert_typed_dict(self._fields, str, Field):
+            raise TypeError
+
+        if len(self._fields) <= 1:
+            return
+
+        field_len = len(next(iter(self._fields.values())))
+        if not all(len(field) == field_len for field in self._fields.values()):
+            raise ValueError
+
+    # implement object methods
+
+    def __repr__(self) -> str:
+        info = ["<Frame"]
+        for name, field in self.items():
+            info.append(f' "{name}"->{str(field)};')
+        info.append(">")
+        return "".join(info)
+
+    def __str__(self) -> str:
+        return (
+            self.to_string()
+            + f"\n[{self.num_elements} elements x {self.num_fields} fields]"
+        )
+
+    def __copy__(self) -> "Frame":
+        return Frame(copy.copy(self._fields))
+
+    def __deepcopy__(self, memo=None) -> "Frame":
+        return Frame(copy.deepcopy(self._fields))
+
+    # implement MutableMapping methods
+
+    def __len__(self) -> int:
+        return len(self._fields)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._fields)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._fields
+
+    def __getitem__(self, key: str) -> Field:
+        return self._fields[key]
+
+    def __setitem__(self, key: str, value: Field) -> None:
+        assert_type(key, str)
+        assert_type(value, Field)
+        if len(self) > 0 and len(value) != len(next(iter(self.values()))):
+            raise ValueError
+        self._fields[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self._fields[key]
+
+    # Frame methods
+
+    @property
+    def num_elements(self) -> int:
+        if self.num_fields == 0:
+            return 0
+        return len(next(iter(self.values())))
+
+    @property
+    def loc_elements(self) -> "ElementLoc":
+        return self.ElementLoc(self)
+
+    @property
+    def num_fields(self) -> int:
+        return len(self)
+
+    @property
+    def loc_fields(self) -> "FieldLoc":
+        return self.FieldLoc(self)
+
+    def describe(self, max_colwidth: int | None = 25) -> str:
+        fields_info = [{"name": name, **field._info()} for name, field in self.items()]
+        fields_dict = {
+            key: [field_info[key] for field_info in fields_info]
+            for key in fields_info[0].keys()
+        }
+        desc_df = pd.DataFrame(fields_dict, dtype=object)
+        return desc_df.to_string(index=False, max_colwidth=max_colwidth)
+
+    def validate(self) -> None:
+        for _, field in self.items():
+            if len(field) != self.num_elements:
+                raise ValueError
+            field.validate()
+
+    def downcast(self) -> "Frame":
+        return Frame({name: field.downcast() for name, field in self.items()})
+
+    def to_csv(self, path: str | PathLike) -> None:
+        path = Path(path)
+        logger.info(f"Saving frame to {path.name} ...")
+        str_df = pd.DataFrame(
+            {name: field._to_str_array() for name, field in self.items()}
+        )
+        str_df.to_csv(path, sep=FIELD_SEP, index=False, header=True)
+
+    def to_pickle(self, path: str | PathLike) -> None:
+        path = Path(path)
+        logger.info(f"Saving frame to {path.name} ...")
+        with open(path, "wb") as file:
+            pickle.dump(self, file)
+
+    @classmethod
+    def from_pickle(cls, path: str | PathLike) -> "Frame":
+        path = Path(path)
+        logger.info(f"Loading frame from {path.name} ...")
+        with open(path, "rb") as file:
+            return pickle.load(file)
+
+    def to_string(
+        self, max_rows: int | None = 10, max_colwidth: int | None = 25
+    ) -> str:
+        if max_rows is None or max_rows >= self.num_elements:
+            str_df = pd.DataFrame()
+            str_df["INDEX"] = np.arange(self.num_elements)
+            for name, field in self.items():
+                str_df[name] = field._to_str_array()
+        else:
+            head = (max_rows + 1) // 2
+            tail = self.num_elements - (max_rows - head)
+            ellipsis = np.array(["..."], dtype=object)
+            str_df = pd.DataFrame()
+            str_df["INDEX"] = np.concatenate(
+                [
+                    np.arange(head).astype(object),
+                    ellipsis,
+                    np.arange(tail, self.num_elements).astype(object),
+                ]
+            )
+            for name, field in self.items():
+                str_df[name] = np.concatenate(
+                    [
+                        field.loc[:head]._to_str_array(),
+                        ellipsis,
+                        field.loc[tail:]._to_str_array(),
+                    ]
+                )
+        return str_df.to_string(index=False, max_colwidth=max_colwidth)
+
+    class ElementLoc:
+        def __init__(self, frame: "Frame") -> None:
+            self.frame = frame
+
+        @overload
+        def __getitem__(self, index: slice) -> "Frame":
+            ...
+
+        @overload
+        def __getitem__(self, index: list[int]) -> "Frame":
+            ...
+
+        @overload
+        def __getitem__(self, index: list[bool]) -> "Frame":
+            ...
+
+        @overload
+        def __getitem__(self, index: np.ndarray) -> "Frame":
+            ...
+
+        @overload
+        def __getitem__(self, index: int) -> dict[str, Any]:
+            ...
+
+        def __getitem__(self, index):
+            if isinstance(index, int):
+                return {name: field[index] for name, field in self.frame.items()}
+            if (
+                isinstance(index, slice)
+                or assert_typed_list(index, int)
+                or assert_typed_list(index, bool)
+                or isinstance(index, np.ndarray)
+            ):
+                return Frame(
+                    {name: field.loc[index] for name, field in self.frame.items()}
+                )
+            assert_never_type(index)
+
+    class FieldLoc:
+        def __init__(self, frame: "Frame") -> None:
+            self.frame = frame
+
+        @overload
+        def __getitem__(self, index: str) -> Field:
+            ...
+
+        @overload
+        def __getitem__(self, index: list[str]) -> "Frame":
+            ...
+
+        def __getitem__(self, index):
+            if isinstance(index, str):
+                return self.frame[index]
+            if assert_typed_list(index, str):
+                return Frame({k: self.frame[k] for k in index})
+            assert_never_type(index)
 
 
 @unique
@@ -89,7 +514,7 @@ class Partition(Enum):
         """Negative IIDs field name."""
         match self:
             case Partition.TRAINING:
-                raise ValueError("Training partition does not have negative IIDs")
+                raise ValueError
             case Partition.VALIDATION:
                 return VAL_NEG_IIDS
             case Partition.TEST:
@@ -220,17 +645,13 @@ class Data:
         :raises ValueError: If the data is invalid.
         :return: The validated data itself.
         """
-        # validate the types of the base fields
+        # validate the base fields
         for source, fields in self.base_fields.items():
             for field in fields:
                 if field not in self.frames[source]:
                     raise ValueError(f"Mising field {field} in {source} frame.")
-                if self.frames[source][field].ftype != FTYPES[field]:
-                    raise ValueError(
-                        f"Invalid field type of field {field} in {source} frame."
-                    )
 
-        # validate the names of the context fields
+        # validate the context fields
         context_fields: set[str] = set()
         for source, fields in self.context_fields.items():
             for field in fields:
@@ -442,9 +863,8 @@ class DataInfo:
         compressed_files_checksum: dict[str, str] = {}
         for source, filename in _FRAMES_PICKLE_XZ.items():
             compressed_file_path = path / filename
-            if not compressed_file_path.exists():
-                file_path = path / _FRAMES_PICKLE[source]
-                compress(file_path, compressed_file_path)
+            file_path = path / _FRAMES_PICKLE[source]
+            compress(file_path, compressed_file_path)
             compressed_files_size[source.value] = compressed_file_path.stat().st_size
             compressed_files_checksum[source.value] = checksum(compressed_file_path)
 

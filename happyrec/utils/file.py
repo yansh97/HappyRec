@@ -21,7 +21,7 @@ def compress(src: str | PathLike, dst: str | PathLike) -> None:
     dst = Path(dst)
     logger.info(f"Compressing {src.name} to {dst.name} ...")
     cores = multiprocessing.cpu_count() // 2
-    cmd = f"xz -zcf6vv -T{cores} {src} > {dst}"
+    cmd = f"xz -zcf6v -T{cores} {src} > {dst}"
     subprocess.run(cmd, shell=True)
 
 

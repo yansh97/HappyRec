@@ -12,8 +12,8 @@ from PIL import Image
 from rich.progress import track
 
 from ..data import Data, Field, FieldType, Frame
-from ..data.field_types import FixedSizeListFtype, ListFtype, ScalarFtype
-from ..data.predefined_fields import FTYPES, IID, UID
+from ..data.field_types import FixedSizeListFtype, ListFtype, ScalarFtype, category
+from ..data.predefined_fields import IID, UID
 from .asserts import assert_never_type
 from .logger import logger
 
@@ -193,7 +193,7 @@ def create_default_user_frame(interaction_frame: Frame) -> Frame:
     :return: The user frame.
     """
     uid_value = np.sort(np.unique(interaction_frame[UID].value), kind="stable")
-    return Frame({UID: Field(FTYPES[UID], uid_value)})
+    return Frame({UID: Field(category(), uid_value)})
 
 
 def create_default_item_frame(interaction_frame: Frame) -> Frame:
@@ -203,7 +203,7 @@ def create_default_item_frame(interaction_frame: Frame) -> Frame:
     :return: The item frame.
     """
     iid_value = np.sort(np.unique(interaction_frame[IID].value), kind="stable")
-    return Frame({IID: Field(FTYPES[IID], iid_value)})
+    return Frame({IID: Field(category(), iid_value)})
 
 
 def create_data(
