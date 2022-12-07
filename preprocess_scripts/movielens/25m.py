@@ -5,8 +5,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from happyrec.data import CategoricalType, DataInfo, Frame, ItemType, TextType
-from happyrec.data.predefined_fields import FTYPES, IID, LABEL, TIMESTAMP, UID
+from happyrec.data import DataInfo, Frame
+from happyrec.data import field_types as ftp
+from happyrec.data.predefined_fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.data import convert_dataframe_to_frame, create_data
 from happyrec.utils.logger import logger
 
@@ -57,10 +58,10 @@ def create_interaction_frame(interaction_file: Path) -> Frame:
 
     return convert_dataframe_to_frame(
         {
-            UID: FTYPES[UID],
-            IID: FTYPES[IID],
-            LABEL: FTYPES[LABEL],
-            TIMESTAMP: FTYPES[TIMESTAMP],
+            UID: ftp.category(),
+            IID: ftp.category(),
+            LABEL: ftp.float_(),
+            TIMESTAMP: ftp.int_(),
         },
         interaction_frame,
     )
@@ -86,12 +87,12 @@ def create_item_frame(item_file: Path, links_file: Path) -> Frame:
 
     return convert_dataframe_to_frame(
         {
-            IID: FTYPES[IID],
-            "title": TextType(),
-            "genres": CategoricalType(ItemType.SEQUENCE),
-            "movielens_id": CategoricalType(ItemType.SCALAR),
-            "imdb_id": CategoricalType(ItemType.SCALAR),
-            "tmdb_id": CategoricalType(ItemType.SCALAR),
+            IID: ftp.category(),
+            "title": ftp.string(),
+            "genres": ftp.list_(ftp.category()),
+            "movielens_id": ftp.category(),
+            "imdb_id": ftp.category(),
+            "tmdb_id": ftp.category(),
         },
         item_frame,
     )
@@ -107,7 +108,7 @@ def preprocess() -> None:
 
     print(data)
     data.info()
-    data.to_npz(MOVIELENS_25M_DIR)
+    data.to_pickle(MOVIELENS_25M_DIR)
 
     data_info = DataInfo.from_data_files(
         MOVIELENS_25M_DIR,

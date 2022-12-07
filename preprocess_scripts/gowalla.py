@@ -4,8 +4,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from happyrec.data import DataInfo, Frame, ItemType, NumericType, ScalarType
-from happyrec.data.predefined_fields import FTYPES, IID, LABEL, TIMESTAMP, UID
+from happyrec.data import DataInfo, Frame
+from happyrec.data import field_types as ftp
+from happyrec.data.predefined_fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.data import convert_dataframe_to_frame, create_data
 from happyrec.utils.logger import logger
 
@@ -55,17 +56,17 @@ def create_interaction_and_item_frame(interaction_file: Path) -> tuple[Frame, Fr
 
     return convert_dataframe_to_frame(
         {
-            UID: FTYPES[UID],
-            IID: FTYPES[IID],
-            LABEL: FTYPES[LABEL],
-            TIMESTAMP: FTYPES[TIMESTAMP],
+            UID: ftp.category(),
+            IID: ftp.category(),
+            LABEL: ftp.float_(),
+            TIMESTAMP: ftp.int_(),
         },
         interaction_frame,
     ), convert_dataframe_to_frame(
         {
-            IID: FTYPES[IID],
-            "latitude": NumericType(ItemType.SCALAR, ScalarType.FLOAT),
-            "longitude": NumericType(ItemType.SCALAR, ScalarType.FLOAT),
+            IID: ftp.category(),
+            "latitude": ftp.float_(),
+            "longitude": ftp.float_(),
         },
         item_frame,
     )
@@ -80,7 +81,7 @@ def preprocess() -> None:
 
     print(data)
     data.info()
-    data.to_npz(GOWALLA_DIR)
+    data.to_pickle(GOWALLA_DIR)
 
     data_info = DataInfo.from_data_files(
         GOWALLA_DIR,
