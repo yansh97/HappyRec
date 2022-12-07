@@ -1,12 +1,12 @@
 import logging
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from rich.progress import track
 
-from happyrec.data import DataInfo, Frame, ItemType, NumericType, ScalarType, TextType
-from happyrec.data.predefined_fields import FTYPES, IID, LABEL, TIMESTAMP, UID
+from happyrec.data import DataInfo, Frame
+from happyrec.data import field_types as ftp
+from happyrec.data.predefined_fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.data import convert_dataframe_to_frame, create_data
 from happyrec.utils.logger import logger
 
@@ -42,7 +42,6 @@ def create_interaction_frame(interaction_files: list[tuple[Path, int]]) -> Frame
                     interaction_dict[TIMESTAMP].append(date)
 
     interaction_frame = pd.DataFrame(interaction_dict)
-    interaction_frame[LABEL] = interaction_frame[LABEL].astype(np.float16)
     interaction_frame[TIMESTAMP] = (
         pd.to_datetime(interaction_frame[TIMESTAMP]).astype(int) // 10**9
     )
@@ -53,10 +52,10 @@ def create_interaction_frame(interaction_files: list[tuple[Path, int]]) -> Frame
 
     return convert_dataframe_to_frame(
         {
-            UID: FTYPES[UID],
-            IID: FTYPES[IID],
-            LABEL: FTYPES[LABEL],
-            TIMESTAMP: FTYPES[TIMESTAMP],
+            UID: ftp.category(),
+            IID: ftp.category(),
+            LABEL: ftp.int_(),
+            TIMESTAMP: ftp.int_(),
         },
         interaction_frame,
     )
@@ -85,9 +84,9 @@ def create_item_frame(item_file: Path, num_items: int) -> Frame:
 
     return convert_dataframe_to_frame(
         {
-            IID: FTYPES[IID],
-            "year": NumericType(ItemType.SCALAR, ScalarType.INT),
-            "title": TextType(),
+            IID: ftp.category(),
+            "year": ftp.int_(),
+            "title": ftp.string(),
         },
         item_frame,
     )
@@ -108,7 +107,7 @@ def preprocess() -> None:
 
     print(data)
     data.info()
-    data.to_npz(NETFLIX_DIR)
+    data.to_pickle(NETFLIX_DIR)
 
     data_info = DataInfo.from_data_files(
         NETFLIX_DIR,
@@ -116,7 +115,6 @@ def preprocess() -> None:
         citation=NETFLIX_CITATION,
         homepage=NETFLIX_HOMEPAGE,
     )
-    print(data_info)
     data_info.to_json(NETFLIX_DIR)
 
 

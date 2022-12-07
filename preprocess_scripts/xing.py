@@ -4,15 +4,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from happyrec.data import (
-    CategoricalType,
-    DataInfo,
-    Frame,
-    ItemType,
-    NumericType,
-    ScalarType,
-)
-from happyrec.data.predefined_fields import FTYPES, IID, LABEL, TIMESTAMP, UID
+from happyrec.data import DataInfo, Frame
+from happyrec.data import field_types as ftp
+from happyrec.data.predefined_fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.data import convert_dataframe_to_frame, create_data
 from happyrec.utils.logger import logger
 
@@ -42,7 +36,6 @@ def create_interaction_frame(interaction_file: Path) -> Frame:
     interaction_frame.columns = np.array([UID, IID, LABEL, TIMESTAMP])
 
     interaction_frame[LABEL][interaction_frame[LABEL] == 4] = -4
-    interaction_frame[LABEL] = interaction_frame[LABEL].astype(np.float16)
 
     interaction_frame = interaction_frame.sort_values(
         by=TIMESTAMP, kind="stable", ignore_index=True
@@ -50,10 +43,10 @@ def create_interaction_frame(interaction_file: Path) -> Frame:
 
     return convert_dataframe_to_frame(
         {
-            UID: FTYPES[UID],
-            IID: FTYPES[IID],
-            LABEL: FTYPES[LABEL],
-            TIMESTAMP: FTYPES[TIMESTAMP],
+            UID: ftp.category(),
+            IID: ftp.category(),
+            LABEL: ftp.int_(),
+            TIMESTAMP: ftp.int_(),
         },
         interaction_frame,
     )
@@ -110,20 +103,20 @@ def create_user_frame(user_file: Path) -> Frame:
 
     return convert_dataframe_to_frame(
         {
-            UID: FTYPES[UID],
-            "jobroles": CategoricalType(ItemType.SEQUENCE),
-            "user_career_level": CategoricalType(ItemType.SCALAR),
-            "user_discipline_id": CategoricalType(ItemType.SCALAR),
-            "user_industry_id": CategoricalType(ItemType.SCALAR),
-            "user_country": CategoricalType(ItemType.SCALAR),
-            "user_region": CategoricalType(ItemType.SCALAR),
-            "experience_n_entries_class": CategoricalType(ItemType.SCALAR),
-            "experience_years_experience": CategoricalType(ItemType.SCALAR),
-            "experience_years_in_current": CategoricalType(ItemType.SCALAR),
-            "edu_degree": CategoricalType(ItemType.SCALAR),
-            "edu_fieldofstudies": CategoricalType(ItemType.SEQUENCE),
-            "wtcj": CategoricalType(ItemType.SCALAR),
-            "premium": CategoricalType(ItemType.SCALAR),
+            UID: ftp.category(),
+            "jobroles": ftp.list_(ftp.category()),
+            "user_career_level": ftp.category(),
+            "user_discipline_id": ftp.category(),
+            "user_industry_id": ftp.category(),
+            "user_country": ftp.category(),
+            "user_region": ftp.category(),
+            "experience_n_entries_class": ftp.category(),
+            "experience_years_experience": ftp.category(),
+            "experience_years_in_current": ftp.category(),
+            "edu_degree": ftp.category(),
+            "edu_fieldofstudies": ftp.list_(ftp.category()),
+            "wtcj": ftp.category(),
+            "premium": ftp.category(),
         },
         user_frame,
     )
@@ -176,17 +169,17 @@ def create_item_frame(raw_item_path: Path) -> Frame:
 
     return convert_dataframe_to_frame(
         {
-            IID: FTYPES[IID],
-            "title": CategoricalType(ItemType.SEQUENCE),
-            "item_career_level": CategoricalType(ItemType.SCALAR),
-            "item_discipline_id": CategoricalType(ItemType.SCALAR),
-            "item_industry_id": CategoricalType(ItemType.SCALAR),
-            "item_country": CategoricalType(ItemType.SCALAR),
-            "is_paid": CategoricalType(ItemType.SCALAR),
-            "item_region": CategoricalType(ItemType.SCALAR),
-            "employment": CategoricalType(ItemType.SCALAR),
-            "tags": CategoricalType(ItemType.SEQUENCE),
-            "created_at": NumericType(ItemType.SCALAR, ScalarType.INT),
+            IID: ftp.category(),
+            "title": ftp.list_(ftp.category()),
+            "item_career_level": ftp.category(),
+            "item_discipline_id": ftp.category(),
+            "item_industry_id": ftp.category(),
+            "item_country": ftp.category(),
+            "is_paid": ftp.category(),
+            "item_region": ftp.category(),
+            "employment": ftp.category(),
+            "tags": ftp.list_(ftp.category()),
+            "created_at": ftp.int_(),
         },
         item_frame,
     )
@@ -201,7 +194,7 @@ def preprocess() -> None:
 
     print(data)
     data.info()
-    data.to_npz(XING_DIR)
+    data.to_pickle(XING_DIR)
 
     data_info = DataInfo.from_data_files(
         XING_DIR,
@@ -209,7 +202,6 @@ def preprocess() -> None:
         citation=XING_CITATION,
         homepage=XING_HOMEPAGE,
     )
-    print(data_info)
     data_info.to_json(XING_DIR)
 
 
