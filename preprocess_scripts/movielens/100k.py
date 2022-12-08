@@ -7,8 +7,8 @@ import pandas as pd
 from happyrec.data import DataInfo, Frame
 from happyrec.data import field_types as ftp
 from happyrec.data.predefined_fields import IID, LABEL, TIMESTAMP, UID
-from happyrec.utils.data import convert_dataframe_to_frame, create_data
 from happyrec.utils.logger import logger
+from happyrec.utils.preprocessing import convert_dataframe_to_frame, create_data
 
 MOVIELENS_100K_DESCRIPTION = (
     "MovieLens 100K movie ratings. Stable benchmark dataset. 100,000 ratings from 1000 "

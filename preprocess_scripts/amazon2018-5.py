@@ -13,14 +13,14 @@ from selectolax.parser import HTMLParser
 from happyrec.data import DataInfo, Frame
 from happyrec.data import field_types as ftp
 from happyrec.data.predefined_fields import IID, LABEL, TIMESTAMP, UID
-from happyrec.utils.data import (
+from happyrec.utils.logger import logger
+from happyrec.utils.preprocessing import (
     convert_dataframe_to_frame,
     convert_image_to_array,
     create_data,
     load_from_jsonline,
     parallelize,
 )
-from happyrec.utils.logger import logger
 
 AMAZON_2018_DESCRIPTION = (
     "Amazon Review Data includes reviews (ratings and text) and product metadata "

@@ -379,6 +379,7 @@ class FixedSizeListFtype(FieldType):
         FieldType.__post_init__(self)
         if not self.element_type._can_be_nested():
             raise ValueError
+        assert_type(self.length, int)
         if self.length <= 0:
             raise ValueError
 
