@@ -195,7 +195,7 @@ class Field(Sequence):
             self, index: slice | list[int] | list[bool] | np.ndarray
         ) -> "Field":
             if isinstance(index, slice):
-                return Field(self.field.ftype, self.field.value[index].copy())
+                return Field(self.field.ftype, self.field.value[index])
             if (
                 assert_typed_list(index, int)
                 or assert_typed_list(index, bool)
@@ -459,7 +459,7 @@ class Frame(Mapping[str, Field]):
             if isinstance(index, str):
                 return self.frame[index]
             if assert_typed_list(index, str):
-                return Frame({k: copy.copy(self.frame[k]) for k in index})
+                return Frame({k: self.frame[k] for k in index})
             assert_never_type(index)
 
 
