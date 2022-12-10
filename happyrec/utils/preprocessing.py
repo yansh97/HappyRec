@@ -228,7 +228,7 @@ def create_data(
     if item_frame is None:
         item_frame = create_default_item_frame(interaction_frame)
 
-    data = Data(interaction_frame, user_frame, item_frame)
+    data = Data.from_frames(interaction_frame, user_frame, item_frame)
     data = data.downcast()
     data.validate()
 

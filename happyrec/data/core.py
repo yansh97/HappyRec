@@ -1,7 +1,7 @@
 import copy
 import json
 import pickle
-from collections.abc import Iterator, MutableMapping, Sequence
+from collections.abc import ItemsView, Iterator, KeysView, Mapping, Sequence, ValuesView
 from dataclasses import asdict, dataclass
 from enum import Enum, unique
 from os import PathLike
@@ -116,34 +116,45 @@ class FieldType:
         raise NotImplementedError
 
 
-@dataclass(eq=False, slots=True)
+@dataclass(eq=False, frozen=True, slots=True)
 class Field(Sequence):
-    _ftype: FieldType
-    _value: np.ndarray
+    ftype: FieldType
+    value: np.ndarray
 
     def __post_init__(self) -> None:
-        assert_type(self._ftype, FieldType)
-        assert_type(self._value, np.ndarray)
-        self._ftype._check_value_shape(self._value)
+        assert_type(self.ftype, FieldType)
+        assert_type(self.value, np.ndarray)
+        self.ftype._check_value_shape(self.value)
 
     # implement object methods
 
     def __str__(self) -> str:
-        return f"{self._ftype}{list(self.shape())}"
+        return f"{self.ftype}{list(self.shape())}"
+
+    def __eq__(self, other):
+        raise NotImplementedError
+
+    def __ne__(self, other):
+        raise NotImplementedError
+
+    def __hash__(self):
+        raise NotImplementedError
 
     def __copy__(self) -> "Field":
-        return Field(copy.copy(self._ftype), copy.copy(self._value))
+        return Field(copy.copy(self.ftype), copy.copy(self.value))
 
     def __deepcopy__(self, memo=None) -> "Field":
-        return Field(copy.deepcopy(self._ftype), copy.deepcopy(self._value))
+        return Field(
+            copy.deepcopy(self.ftype, memo=memo), copy.deepcopy(self.value, memo=memo)
+        )
 
     # implement Sequence methods
 
-    def __len__(self) -> int:
-        return len(self._value)
-
     def __getitem__(self, index: int) -> Any:
-        return self._value[index]
+        return self.value[index]
+
+    def __len__(self) -> int:
+        return len(self.value)
 
     def __contains__(self, value) -> bool:
         for v in self:
@@ -152,10 +163,10 @@ class Field(Sequence):
         return False
 
     def __iter__(self) -> Iterator[Any]:
-        return iter(self._value)
+        return iter(self.value)
 
     def __reversed__(self) -> Iterator[Any]:
-        return reversed(self._value)
+        return reversed(self.value)
 
     def index(self, value, start: int = 0, stop: int | None = None) -> int:
         if start < 0:
@@ -176,14 +187,6 @@ class Field(Sequence):
 
     # Field properties
 
-    @property
-    def ftype(self) -> FieldType:
-        return self._ftype
-
-    @property
-    def value(self) -> np.ndarray:
-        return self._value
-
     class Loc:
         def __init__(self, field: "Field") -> None:
             self.field = field
@@ -192,13 +195,13 @@ class Field(Sequence):
             self, index: slice | list[int] | list[bool] | np.ndarray
         ) -> "Field":
             if isinstance(index, slice):
-                return Field(self.field._ftype, self.field._value[index].copy())
+                return Field(self.field.ftype, self.field.value[index].copy())
             if (
                 assert_typed_list(index, int)
                 or assert_typed_list(index, bool)
                 or isinstance(index, np.ndarray)
             ):
-                return Field(self.field._ftype, self.field._value[index])
+                return Field(self.field.ftype, self.field.value[index])
             assert_never_type(index)
 
     @property
@@ -208,35 +211,35 @@ class Field(Sequence):
     # Field methods
 
     def dtype(self) -> str:
-        return self._ftype._dtype(self._value)
+        return self.ftype._dtype(self.value)
 
     def shape(self) -> tuple:
-        return self._ftype._shape(self._value)
+        return self.ftype._shape(self.value)
 
     def non_null_count(self) -> int:
-        return self._ftype._non_null_count(self._value)
+        return self.ftype._non_null_count(self.value)
 
     def mean(self) -> float | None:
-        return self._ftype._mean(self._value)
+        return self.ftype._mean(self.value)
 
     def min(self) -> bool | int | float | str | None:
-        return self._ftype._min(self._value)
+        return self.ftype._min(self.value)
 
     def max(self) -> bool | int | float | str | None:
-        return self._ftype._max(self._value)
+        return self.ftype._max(self.value)
 
     def validate(self) -> None:
-        self._ftype._validate(self._value)
+        self.ftype._validate(self.value)
 
     def downcast(self) -> "Field":
-        return Field(self._ftype, self._ftype._downcast(self._value))
+        return Field(self.ftype, self.ftype._downcast(self.value))
 
     def _to_str_array(self) -> np.ndarray:
-        return self._ftype._to_str_array(self._value)
+        return self.ftype._to_str_array(self.value)
 
     def _info(self) -> dict[str, Any]:
         ret = {
-            "field type": str(self._ftype),
+            "field type": str(self.ftype),
             "dtype": self.dtype(),
             "shape": self.shape(),
             "non-null count": self.non_null_count(),
@@ -247,29 +250,22 @@ class Field(Sequence):
         return ret
 
 
-@dataclass(eq=False, slots=True)
-class Frame(MutableMapping[str, Field]):
-    _fields: dict[str, Field]
+@dataclass(eq=False, frozen=True, slots=True)
+class Frame(Mapping[str, Field]):
+    fields: dict[str, Field]
 
     def __post_init__(self) -> None:
-        if not assert_typed_dict(self._fields, str, Field):
+        if not assert_typed_dict(self.fields, str, Field):
             raise TypeError
 
-        if len(self._fields) <= 1:
+        if len(self.fields) <= 1:
             return
 
-        field_len = len(next(iter(self._fields.values())))
-        if not all(len(field) == field_len for field in self._fields.values()):
+        field_len = len(next(iter(self.fields.values())))
+        if not all(len(field) == field_len for field in self.fields.values()):
             raise ValueError
 
     # implement object methods
-
-    def __repr__(self) -> str:
-        info = ["<Frame"]
-        for name, field in self.items():
-            info.append(f' "{name}"->{str(field)};')
-        info.append(">")
-        return "".join(info)
 
     def __str__(self) -> str:
         return (
@@ -277,35 +273,48 @@ class Frame(MutableMapping[str, Field]):
             + f"\n[{self.num_elements} elements x {self.num_fields} fields]"
         )
 
+    def __eq__(self, other):
+        raise NotImplementedError
+
+    def __ne__(self, other):
+        raise NotImplementedError
+
+    def __hash__(self):
+        raise NotImplementedError
+
     def __copy__(self) -> "Frame":
-        return Frame(copy.copy(self._fields))
+        return Frame(copy.copy(self.fields))
 
     def __deepcopy__(self, memo=None) -> "Frame":
-        return Frame(copy.deepcopy(self._fields))
+        return Frame(copy.deepcopy(self.fields, memo=memo))
 
-    # implement MutableMapping methods
-
-    def __len__(self) -> int:
-        return len(self._fields)
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._fields)
-
-    def __contains__(self, key: str) -> bool:
-        return key in self._fields
+    # implement Mapping methods
 
     def __getitem__(self, key: str) -> Field:
-        return self._fields[key]
+        return self.fields[key]
 
-    def __setitem__(self, key: str, value: Field) -> None:
-        assert_type(key, str)
-        assert_type(value, Field)
-        if len(self) > 0 and len(value) != len(next(iter(self.values()))):
-            raise ValueError
-        self._fields[key] = value
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.fields)
 
-    def __delitem__(self, key: str) -> None:
-        del self._fields[key]
+    def __len__(self) -> int:
+        return len(self.fields)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.fields
+
+    def keys(self) -> KeysView[str]:
+        return self.fields.keys()
+
+    def items(self) -> ItemsView[str, Field]:
+        return self.fields.items()
+
+    def values(self) -> ValuesView[Field]:
+        return self.fields.values()
+
+    def get(self, key: str, default: Field | None = None) -> Field | None:
+        if default is not None:
+            assert_type(default, Field)
+        return self.fields.get(key, default)
 
     # Frame methods
 
@@ -450,7 +459,7 @@ class Frame(MutableMapping[str, Field]):
             if isinstance(index, str):
                 return self.frame[index]
             if assert_typed_list(index, str):
-                return Frame({k: self.frame[k] for k in index})
+                return Frame({k: copy.copy(self.frame[k]) for k in index})
             assert_never_type(index)
 
 
@@ -521,66 +530,110 @@ class Partition(Enum):
                 return TEST_NEG_IIDS
 
 
-_FRAMES_PICKLE = {
-    Source.INTERACTION: "interaction_frame.pickle",
-    Source.USER: "user_frame.pickle",
-    Source.ITEM: "item_frame.pickle",
-}
-_FRAMES_CSV = {
-    Source.INTERACTION: "interaction_frame.csv",
-    Source.USER: "user_frame.csv",
-    Source.ITEM: "item_frame.csv",
-}
+@dataclass(eq=False, frozen=True, slots=True)
+class Data(Mapping[str, Frame]):
+    frames: dict[Source, Frame]
 
+    def __post_init__(self) -> None:
+        if not assert_typed_dict(self.frames, Source, Frame):
+            raise ValueError
 
-class Data:
-    __slots__ = ("frames",)
+        if len(self.frames) != 3:
+            raise ValueError
 
-    def __init__(
-        self, interaction_frame: Frame, user_frame: Frame, item_frame: Frame
-    ) -> None:
-        """Initialize the data.
+        if list(self.frames.keys()) != list(Source):
+            raise ValueError
 
-        :param interaction_frame: The interaction frame.
-        :param user_frame: The user frame.
-        :param item_frame: The item frame.
-        """
-        assert_type(interaction_frame, Frame)
-        assert_type(user_frame, Frame)
-        assert_type(item_frame, Frame)
+    @classmethod
+    def from_frames(
+        cls, interaction_frame: Frame, user_frame: Frame, item_frame: Frame
+    ) -> "Data":
+        return cls(
+            {
+                Source.INTERACTION: interaction_frame,
+                Source.USER: user_frame,
+                Source.ITEM: item_frame,
+            }
+        )
 
-        self.frames: dict[Source, Frame] = {
-            Source.INTERACTION: interaction_frame,
-            Source.USER: user_frame,
-            Source.ITEM: item_frame,
-        }
-        """The underlying frames in the data."""
+    # implement object methods
+
+    def __str__(self) -> str:
+        return "\n".join(
+            f"{source.value} frame:\n" + str(frame)
+            for source, frame in self.frames.items()
+        )
+
+    def __eq__(self, other):
+        raise NotImplementedError
+
+    def __ne__(self, other):
+        raise NotImplementedError
+
+    def __hash__(self):
+        raise NotImplementedError
+
+    def __copy__(self) -> "Data":
+        return Data(copy.copy(self.frames))
+
+    def __deepcopy__(self, memo=None) -> "Data":
+        return Data(copy.deepcopy(self.frames, memo=memo))
+
+    # implement Mapping methods
+
+    def __getitem__(self, key: Source) -> Frame:
+        return self.frames[key]
+
+    def __iter__(self) -> Iterator[Source]:
+        return iter(self.frames)
+
+    def __len__(self) -> int:
+        return len(self.frames)
+
+    def __contains__(self, key: Source) -> bool:
+        return key in self.frames
+
+    def keys(self) -> KeysView[Source]:
+        return self.frames.keys()
+
+    def items(self) -> ItemsView[Source, Frame]:
+        return self.frames.items()
+
+    def values(self) -> ValuesView[Frame]:
+        return self.frames.values()
+
+    def get(self, key: Source, default: Frame | None = None) -> Frame | None:
+        if default is not None:
+            assert_type(default, Frame)
+        return self.frames.get(key, default)
+
+    # Data methods
 
     @property
     def num_elements(self) -> dict[Source, int]:
         """The number of elements for each source."""
-        return {source: frame.num_elements for source, frame in self.frames.items()}
+        return {source: frame.num_elements for source, frame in self.items()}
 
     @property
     def has_timestamp(self) -> bool:
         """Whether the data has timestamp."""
-        return TIMESTAMP in self.frames[Source.INTERACTION]
+        return TIMESTAMP in self[Source.INTERACTION]
 
     @property
     def is_splitted(self) -> bool:
         """Whether the data is splitted."""
         return (
-            {TRAIN_MASK, VAL_MASK, TEST_MASK}.issubset(self.frames[Source.INTERACTION])
+            {TRAIN_MASK, VAL_MASK, TEST_MASK}.issubset(self[Source.INTERACTION])
             and {TRAIN_IIDS_SET, VAL_IIDS_SET, TEST_IIDS_SET}.issubset(
-                self.frames[Source.USER]
+                self[Source.USER]
             )
-            and POP_PROB in self.frames[Source.ITEM]
+            and POP_PROB in self[Source.ITEM]
         )
 
     @property
     def num_partition_interactions(self) -> dict[Partition, int]:
         """The number of interactions in each partition."""
-        interaction_frame = self.frames[Source.INTERACTION]
+        interaction_frame = self[Source.INTERACTION]
         return {
             partition: interaction_frame[partition.mask_field].value.sum()
             for partition in Partition
@@ -589,12 +642,12 @@ class Data:
     @property
     def has_eval_negative_samples(self) -> bool:
         """Whether the data has evaluation negative samples."""
-        return {VAL_NEG_IIDS, TEST_NEG_IIDS}.issubset(self.frames[Source.USER])
+        return {VAL_NEG_IIDS, TEST_NEG_IIDS}.issubset(self[Source.USER])
 
     @property
     def num_eval_negative_samples(self) -> dict[Partition, int]:
         """The number of evaluation negative samples in each partition."""
-        user_frame = self.frames[Source.USER]
+        user_frame = self[Source.USER]
         return {
             partition: user_frame[partition.neg_iids_field].value.shape[1]
             for partition in Partition
@@ -604,7 +657,7 @@ class Data:
     @property
     def fields(self) -> dict[Source, list[str]]:
         """The fields for each source."""
-        return {source: list(frame.keys()) for source, frame in self.frames.items()}
+        return {source: list(frame.keys()) for source, frame in self.items()}
 
     @property
     def base_fields(self) -> dict[Source, list[str]]:
@@ -633,7 +686,7 @@ class Data:
             Source.USER: [],
             Source.ITEM: [],
         }
-        for source, frame in self.frames.items():
+        for source, frame in self.items():
             for field in frame:
                 if field not in base_fields[source]:
                     fields[source].append(field)
@@ -648,7 +701,7 @@ class Data:
         # validate the base fields
         for source, fields in self.base_fields.items():
             for field in fields:
-                if field not in self.frames[source]:
+                if field not in self[source]:
                     raise ValueError(f"Mising field {field} in {source} frame.")
 
         # validate the context fields
@@ -660,10 +713,10 @@ class Data:
                 context_fields.add(field)
 
         # validate the uids and iids
-        interaction_uids_set = set(self.frames[Source.INTERACTION][UID].value)
-        interaction_iids_set = set(self.frames[Source.INTERACTION][IID].value)
-        uids_set = set(self.frames[Source.USER][UID].value)
-        iids_set = set(self.frames[Source.ITEM][IID].value)
+        interaction_uids_set = set(self[Source.INTERACTION][UID].value)
+        interaction_iids_set = set(self[Source.INTERACTION][IID].value)
+        uids_set = set(self[Source.USER][UID].value)
+        iids_set = set(self[Source.ITEM][IID].value)
         if interaction_uids_set > uids_set:
             raise ValueError(
                 "The user IDs in the interaction frame are not a subset of the user IDs"
@@ -676,22 +729,11 @@ class Data:
             )
 
         # validate the frames
-        for _, frame in self.frames.items():
+        for _, frame in self.items():
             frame.validate()
 
     def downcast(self) -> "Data":
-        return Data(
-            interaction_frame=self.frames[Source.INTERACTION].downcast(),
-            user_frame=self.frames[Source.USER].downcast(),
-            item_frame=self.frames[Source.ITEM].downcast(),
-        )
-
-    def __str__(self) -> str:
-        return "\n".join(
-            frame.to_string()
-            + f"\n[{frame.num_elements} {source.value}s x {frame.num_fields} fields]"
-            for source, frame in self.frames.items()
-        )
+        return Data({source: frame.downcast() for source, frame in self.items()})
 
     def info(self) -> None:
         """Print the information of the data."""
@@ -708,7 +750,7 @@ class Data:
         print(
             f"Context fields of interactions: {self.context_fields[Source.INTERACTION]}"
         )
-        print(self.frames[Source.INTERACTION].describe())
+        print(self[Source.INTERACTION].describe())
 
         print(f"# users: {self.num_elements[Source.USER]}")
         print(f"with evaluation negative samples: {self.has_eval_negative_samples}")
@@ -719,12 +761,12 @@ class Data:
             print(f"  # test negative samples: {num_test}")
         print(f"Base fields of users: {self.base_fields[Source.USER]}")
         print(f"Context fields of users: {self.context_fields[Source.USER]}")
-        print(self.frames[Source.USER].describe())
+        print(self[Source.USER].describe())
 
         print(f"# Items: {self.num_elements[Source.ITEM]}")
         print(f"Base fields of items: {self.base_fields[Source.ITEM]}")
         print(f"Context fields of items: {self.context_fields[Source.ITEM]}")
-        print(self.frames[Source.ITEM].describe())
+        print(self[Source.ITEM].describe())
 
     def to_pickle(self, path: str | PathLike) -> None:
         """Save the data to pickle files.
@@ -734,7 +776,7 @@ class Data:
         path = Path(path)
         logger.info(f"Saving data to {path} ...")
         path.mkdir(parents=True, exist_ok=True)
-        for source, frame in self.frames.items():
+        for source, frame in self.items():
             frame.to_pickle(path / _FRAMES_PICKLE[source])
 
     @classmethod
@@ -746,10 +788,12 @@ class Data:
         """
         path = Path(path)
         logger.info(f"Loading data from {path} ...")
-        interaction_frame = Frame.from_pickle(path / _FRAMES_PICKLE[Source.INTERACTION])
-        user_frame = Frame.from_pickle(path / _FRAMES_PICKLE[Source.USER])
-        item_frame = Frame.from_pickle(path / _FRAMES_PICKLE[Source.ITEM])
-        return cls(interaction_frame, user_frame, item_frame)
+        return cls(
+            {
+                source: Frame.from_pickle(path / _FRAMES_PICKLE[source])
+                for source in Source
+            }
+        )
 
     def to_csv(self, path: str | PathLike) -> None:
         """Save the data to csv files.
@@ -759,16 +803,8 @@ class Data:
         path = Path(path)
         logger.info(f"Saving data to {path} ...")
         path.mkdir(parents=True, exist_ok=True)
-        for source, frame in self.frames.items():
+        for source, frame in self.items():
             frame.to_csv(path / _FRAMES_CSV[source])
-
-
-_FRAMES_PICKLE_XZ = {
-    Source.INTERACTION: "interaction_frame.pickle.xz",
-    Source.USER: "user_frame.pickle.xz",
-    Source.ITEM: "item_frame.pickle.xz",
-}
-_DATA_INFO_JSON = "data_info.json"
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -807,14 +843,17 @@ class DataInfo:
             }
         return fields
 
-    def print_field_info(self) -> None:
+    def print_field_info(self, max_colwidth: int | None = 25) -> None:
         """Print the field information."""
         fields = self.fields
         for source, field_info in fields.items():
             print(f"{source} fields:")
-            infos = [{"name": name, **info} for name, info in field_info.items()]
-            info_frame = pd.DataFrame.from_records(infos)
-            print(info_frame)
+            info = [{"name": name, **info} for name, info in field_info.items()]
+            info_dict = {
+                key: [field_info[key] for field_info in info] for key in info[0].keys()
+            }
+            info_frame = pd.DataFrame(info_dict, dtype=object)
+            print(info_frame.to_string(index=False, max_colwidth=max_colwidth))
 
     @classmethod
     def from_data_files(
@@ -842,12 +881,12 @@ class DataInfo:
 
         base_fields: dict[str, dict[str, dict[str, Any]]] = {}
         for source, fields in data.base_fields.items():
-            frame = data.frames[source]
+            frame = data[source]
             base_fields[source.value] = {name: frame[name]._info() for name in fields}
 
         context_fields: dict[str, dict[str, dict[str, Any]]] = {}
         for source, fields in data.context_fields.items():
-            frame = data.frames[source]
+            frame = data[source]
             context_fields[source.value] = {
                 name: frame[name]._info() for name in fields
             }
@@ -903,3 +942,21 @@ class DataInfo:
         logger.info(f"Loading data info from {path} ...")
         with open(path / _DATA_INFO_JSON, "r", encoding="utf-8") as f:
             return cls(**json.load(f))
+
+
+_FRAMES_PICKLE = {
+    Source.INTERACTION: "interaction_frame.pickle",
+    Source.USER: "user_frame.pickle",
+    Source.ITEM: "item_frame.pickle",
+}
+_FRAMES_CSV = {
+    Source.INTERACTION: "interaction_frame.csv",
+    Source.USER: "user_frame.csv",
+    Source.ITEM: "item_frame.csv",
+}
+_FRAMES_PICKLE_XZ = {
+    Source.INTERACTION: "interaction_frame.pickle.xz",
+    Source.USER: "user_frame.pickle.xz",
+    Source.ITEM: "item_frame.pickle.xz",
+}
+_DATA_INFO_JSON = "data_info.json"
