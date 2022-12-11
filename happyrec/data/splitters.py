@@ -26,7 +26,7 @@ class Splitter:
 
 
 @dataclass(frozen=True, slots=True)
-class _Splitter:
+class RecSplitter:
     _: KW_ONLY
     ignore_negative_interactions: bool = False
     order_by_time: bool = False
@@ -41,29 +41,8 @@ class _Splitter:
         assert_type(self.seed, int)
         object.__setattr__(self, "rng", np.random.default_rng(self.seed))
 
-    # def _generate_pop_probs(self, index_frame: Frame, item_frame: Frame) -> Field:
-    #     counter = Counter(index_frame[IID].value)
-    #     total_num = index_frame.num_elements
-    #     probs = {iid: count / total_num for iid, count in counter.items()}
-    #     probs_array = np.vectorize(lambda x: probs.get(x, 0.0))(item_frame[IID].value)
-    #     return Field(float_(), probs_array)
-
     def generate_indices(self, index_array: np.ndarray) -> dict[Partition, np.ndarray]:
         raise NotImplementedError
-
-    # def _generate_partition_iids_set(self, data: Data, stage: Stage) -> Field:
-    #     if stage.mask_column() not in data.inter_frame:
-    #         raise ValueError(f"交互数据中没有{stage.mask_column()}字段")
-    #     inter_df = pd.DataFrame(
-    #         data.inter_frame.loc_cols[[UID, IID, stage.mask_column()]].data
-    #     )
-    #     stage_df = inter_df[inter_df[stage.mask_column()] == 1]
-
-    #     iids_array = np.vectorize(lambda x: set())(data.user_frame[UID])
-    #     for uid, group in stage_df.groupby(by=UID):
-    #         iids_array[uid] = set(group[IID])
-    #     data.user_frame[stage.iids_set_column()] = iids_array
-    #     return data
 
     def split(self, data: Data) -> Data:
         interaction_frame = data[Source.INTERACTION]
@@ -110,11 +89,11 @@ class _Splitter:
 
 
 @dataclass(frozen=True, slots=True)
-class RatioSplitter(_Splitter):
+class RatioSplitter(RecSplitter):
     ratio: tuple[float, float, float]
 
     def __post_init__(self) -> None:
-        _Splitter.__post_init__(self)
+        RecSplitter.__post_init__(self)
         assert_type(self.ratio, tuple)
         if len(self.ratio) != 3:
             raise ValueError
@@ -135,7 +114,7 @@ class RatioSplitter(_Splitter):
 
 
 @dataclass(frozen=True, slots=True)
-class LeaveOneOutSplitter(_Splitter):
+class LeaveOneOutSplitter(RecSplitter):
     def generate_indices(self, index_array: np.ndarray) -> dict[Partition, np.ndarray]:
         total_num = len(index_array)
         val_num = 1 if total_num >= 3 else 0
