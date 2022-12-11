@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from enum import Enum, unique
 from os import PathLike
 from pathlib import Path
-from typing import Any, overload
+from typing import Any, Literal, overload
 
 import numpy as np
 import pandas as pd
@@ -48,6 +48,9 @@ class ElementType:
     def _can_hold_null(self) -> bool:
         raise NotImplementedError
 
+    def _can_be_sorted(self) -> bool:
+        raise NotImplementedError
+
     def _non_null_count(self, array: np.ndarray) -> int:
         raise NotImplementedError
 
@@ -80,6 +83,9 @@ class FieldType:
 
     def __str__(self) -> str:
         return self.name
+
+    def _can_be_sorted(self) -> bool:
+        raise NotImplementedError
 
     def _dtype(self, value: np.ndarray) -> str:
         raise NotImplementedError
@@ -185,7 +191,10 @@ class Field(Sequence):
     def count(self, value):
         return sum(1 for v in self if v is value or v == value)
 
-    # Field properties
+    # Field methods
+
+    def _can_be_sorted(self) -> bool:
+        return self.ftype._can_be_sorted()
 
     class Loc:
         def __init__(self, field: "Field") -> None:
@@ -195,7 +204,7 @@ class Field(Sequence):
             self, index: slice | list[int] | list[bool] | np.ndarray
         ) -> "Field":
             if isinstance(index, slice):
-                return Field(self.field.ftype, self.field.value[index])
+                return Field(self.field.ftype, self.field.value[index].copy())
             if (
                 assert_typed_list(index, int)
                 or assert_typed_list(index, bool)
@@ -207,8 +216,6 @@ class Field(Sequence):
     @property
     def loc(self) -> Loc:
         return self.Loc(self)
-
-    # Field methods
 
     def dtype(self) -> str:
         return self.ftype._dtype(self.value)
@@ -353,6 +360,27 @@ class Frame(Mapping[str, Field]):
 
     def downcast(self) -> "Frame":
         return Frame({name: field.downcast() for name, field in self.items()})
+
+    def sort_values(
+        self,
+        by: str,
+        *,
+        ascending: bool = True,
+        kind: Literal["quicksort", "stable"] = "stable",
+    ) -> "Frame":
+        if not self[by]._can_be_sorted():
+            raise ValueError
+        indices = np.argsort(self[by].value, kind=kind)
+        if not ascending:
+            indices = indices[::-1]
+        return self.loc_elements[indices]
+
+    def groupby(self, by: str) -> Iterator[tuple[Any, "Frame"]]:
+        if not self[by]._can_be_sorted():
+            raise ValueError
+        unique_values, codes = np.unique(self[by].value, return_inverse=True)
+        for i in range(len(unique_values)):
+            yield unique_values[i], self.loc_elements[codes == i]
 
     def to_csv(self, path: str | PathLike) -> None:
         path = Path(path)

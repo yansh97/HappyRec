@@ -64,8 +64,6 @@ class Compose(DataTransform):
 class RemoveNegativeInteractions(DataTransform):
     def transform(self, data: Data) -> Data:
         interaction_frame = data[Source.INTERACTION]
-        user_frame = data[Source.USER]
-        item_frame = data[Source.ITEM]
 
         interaction_mask = interaction_frame[LABEL].value > 0
         interaction_frame = interaction_frame.loc_elements[interaction_mask]
@@ -75,7 +73,7 @@ class RemoveNegativeInteractions(DataTransform):
             interaction_frame.num_elements,
         )
 
-        return Data.from_frames(interaction_frame, user_frame, item_frame)
+        return Data.from_frames(interaction_frame, data[Source.USER], data[Source.ITEM])
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,8 +133,6 @@ class FilterKCoreInteractions(DataTransform):
 
     def transform(self, data: Data) -> Data:
         interaction_frame = data[Source.INTERACTION]
-        user_frame = data[Source.USER]
-        item_frame = data[Source.ITEM]
 
         uids = interaction_frame[UID].value
         iids = interaction_frame[IID].value
@@ -177,7 +173,7 @@ class FilterKCoreInteractions(DataTransform):
             interaction_frame.num_elements,
         )
 
-        return Data.from_frames(interaction_frame, user_frame, item_frame)
+        return Data.from_frames(interaction_frame, data[Source.USER], data[Source.ITEM])
 
 
 @dataclass(frozen=True, slots=True)

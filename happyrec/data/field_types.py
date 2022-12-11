@@ -30,6 +30,9 @@ class BoolEtype(ElementType):
     def _can_hold_null(self) -> bool:
         return False
 
+    def _can_be_sorted(self) -> bool:
+        return True
+
     def _non_null_count(self, array: np.ndarray) -> int:
         _assert_1d_array(array)
         return len(array)
@@ -67,6 +70,9 @@ class IntEtype(ElementType):
     def _can_hold_null(self) -> bool:
         return False
 
+    def _can_be_sorted(self) -> bool:
+        return True
+
     def _non_null_count(self, array: np.ndarray) -> int:
         _assert_1d_array(array)
         return len(array)
@@ -103,6 +109,9 @@ class FloatEtype(ElementType):
 
     def _can_hold_null(self) -> bool:
         return False
+
+    def _can_be_sorted(self) -> bool:
+        return True
 
     def _non_null_count(self, array: np.ndarray) -> int:
         _assert_1d_array(array)
@@ -142,6 +151,9 @@ class CategoryEtype(ElementType):
 
     def _can_hold_null(self) -> bool:
         return False
+
+    def _can_be_sorted(self) -> bool:
+        return True
 
     def _non_null_count(self, array: np.ndarray) -> int:
         _assert_1d_array(array)
@@ -201,6 +213,9 @@ class StringEtype(ElementType):
     def _can_hold_null(self) -> bool:
         return True
 
+    def _can_be_sorted(self) -> bool:
+        return False
+
     def _non_null_count(self, array: np.ndarray) -> int:
         _assert_1d_array(array)
         return len(array) - int(np.vectorize(isinstance)(array, type(None)).sum())
@@ -242,6 +257,9 @@ class ImageEtype(ElementType):
 
     def _can_hold_null(self) -> bool:
         return True
+
+    def _can_be_sorted(self) -> bool:
+        return False
 
     def _non_null_count(self, array: np.ndarray) -> int:
         _assert_1d_array(array)
@@ -296,6 +314,9 @@ class ObjectEtype(ElementType):
     def _can_hold_null(self) -> bool:
         return True
 
+    def _can_be_sorted(self) -> bool:
+        return False
+
     def _non_null_count(self, array: np.ndarray) -> int:
         _assert_1d_array(array)
         return len(array) - int(np.vectorize(isinstance)(array, type(None)).sum())
@@ -327,6 +348,9 @@ class ScalarFtype(FieldType):
     @property
     def name(self) -> str:
         return f"scalar<{self.element_type}>"
+
+    def _can_be_sorted(self) -> bool:
+        return self.element_type._can_be_sorted()
 
     def _dtype(self, value: np.ndarray) -> str:
         return str(value.dtype)
@@ -387,6 +411,9 @@ class FixedSizeListFtype(FieldType):
     def name(self) -> str:
         return f"list<{self.element_type}, {self.length}>"
 
+    def _can_be_sorted(self) -> bool:
+        return False
+
     def _dtype(self, value: np.ndarray) -> str:
         return str(value.dtype)
 
@@ -445,6 +472,9 @@ class ListFtype(FieldType):
     @property
     def name(self) -> str:
         return f"list<{self.element_type}>"
+
+    def _can_be_sorted(self) -> bool:
+        return False
 
     def _dtype(self, value: np.ndarray) -> str:
         dtypes = np.vectorize(lambda x: x.dtype)(value)

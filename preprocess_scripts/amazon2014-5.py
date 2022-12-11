@@ -245,6 +245,9 @@ def preprocess(
     data.info()
     data.to_pickle(output_dir)
 
+    del data
+    gc.collect()
+
     data_info = DataInfo.from_data_files(
         output_dir,
         description=AMAZON_2014_DESCRIPTION,
