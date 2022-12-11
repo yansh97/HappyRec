@@ -23,15 +23,11 @@ from ..utils.logger import logger
 from .predefined_fields import (
     IID,
     LABEL,
-    POP_PROB,
-    TEST_IIDS_SET,
     TEST_MASK,
     TEST_NEG_IIDS,
     TIMESTAMP,
-    TRAIN_IIDS_SET,
     TRAIN_MASK,
     UID,
-    VAL_IIDS_SET,
     VAL_MASK,
     VAL_NEG_IIDS,
 )
@@ -536,17 +532,6 @@ class Partition(Enum):
                 return TEST_MASK
 
     @property
-    def iids_set_field(self) -> str:
-        """IIDs set field name."""
-        match self:
-            case Partition.TRAINING:
-                return TRAIN_IIDS_SET
-            case Partition.VALIDATION:
-                return VAL_IIDS_SET
-            case Partition.TEST:
-                return TEST_IIDS_SET
-
-    @property
     def neg_iids_field(self) -> str:
         """Negative IIDs field name."""
         match self:
@@ -650,13 +635,7 @@ class Data(Mapping[str, Frame]):
     @property
     def is_splitted(self) -> bool:
         """Whether the data is splitted."""
-        return (
-            {TRAIN_MASK, VAL_MASK, TEST_MASK}.issubset(self[Source.INTERACTION])
-            and {TRAIN_IIDS_SET, VAL_IIDS_SET, TEST_IIDS_SET}.issubset(
-                self[Source.USER]
-            )
-            and POP_PROB in self[Source.ITEM]
-        )
+        return {TRAIN_MASK, VAL_MASK, TEST_MASK}.issubset(self[Source.INTERACTION])
 
     @property
     def num_partition_interactions(self) -> dict[Partition, int]:
@@ -699,8 +678,6 @@ class Data(Mapping[str, Frame]):
             fields[Source.INTERACTION].append(TIMESTAMP)
         if self.is_splitted:
             fields[Source.INTERACTION].extend([TRAIN_MASK, VAL_MASK, TEST_MASK])
-            fields[Source.USER].extend([TRAIN_IIDS_SET, VAL_IIDS_SET, TEST_IIDS_SET])
-            fields[Source.ITEM].append(POP_PROB)
         if self.has_eval_negative_samples:
             fields[Source.USER].extend([VAL_NEG_IIDS, TEST_NEG_IIDS])
         return fields
