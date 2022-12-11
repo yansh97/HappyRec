@@ -8,9 +8,11 @@ import numpy as np
 
 from ..constants import DEFAULT_SEED
 from ..utils.asserts import assert_type
+from ..utils.logger import logger
 from .core import Data, Field, Frame, Partition, Source
 from .field_types import category, list_
 from .predefined_fields import IID, UID
+from .transforms import assert_no_eval_negative_samples
 
 
 @unique
@@ -144,6 +146,8 @@ class EvalNegSampler:
         assert_type(self.sampler, Sampler)
 
     def __call__(self, data: Data) -> Data:
+        logger.debug("Sampling evaluation negative items by %s ...", self.sampler)
+        assert_no_eval_negative_samples(data)
         data = self.sample(data)
         data.validate()
         return data

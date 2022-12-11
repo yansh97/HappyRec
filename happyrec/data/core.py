@@ -647,6 +647,23 @@ class Data(Mapping[str, Frame]):
         }
 
     @property
+    def partition_data(self) -> dict[Partition, "Data"]:
+        """The data for each partition."""
+        interaction_frame = self[Source.INTERACTION]
+        user_frame = self[Source.USER]
+        item_frame = self[Source.ITEM]
+        return {
+            partition: Data.from_frames(
+                interaction_frame.loc_elements[
+                    interaction_frame[partition.mask_field].value
+                ],
+                user_frame,
+                item_frame,
+            )
+            for partition in Partition
+        }
+
+    @property
     def has_eval_negative_samples(self) -> bool:
         """Whether the data has evaluation negative samples."""
         return {VAL_NEG_IIDS, TEST_NEG_IIDS}.issubset(self[Source.USER])
