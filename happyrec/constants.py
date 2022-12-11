@@ -19,3 +19,6 @@ FIELD_SEP = ","
 """The separator used to separate fields in a line."""
 SEQ_SEP = " "
 """The separator used to separate items in a sequence field."""
+
+# Default seed
+DEFAULT_SEED = 2022
