@@ -5,7 +5,7 @@ import numpy as np
 from ..constants import DEFAULT_SEED
 from ..utils.asserts import assert_type
 from ..utils.logger import logger
-from .core import Data, Field, Frame, Partition, Source
+from .core import Data, Field, Frame, Phase, Source
 from .field_types import bool_, int_
 from .predefined_fields import LABEL, TIMESTAMP, UID
 from .transforms import assert_no_eval_negative_samples, assert_not_splitted
@@ -41,7 +41,7 @@ class RecSplitter(Splitter):
         assert_type(self.seed, int)
         object.__setattr__(self, "rng", np.random.default_rng(self.seed))
 
-    def generate_indices(self, index_array: np.ndarray) -> dict[Partition, np.ndarray]:
+    def generate_indices(self, index_array: np.ndarray) -> dict[Phase, np.ndarray]:
         raise NotImplementedError
 
     def split(self, data: Data) -> Data:
@@ -72,23 +72,23 @@ class RecSplitter(Splitter):
 
         group_indices = [self.generate_indices(group) for group in index_groups]
         indices = {
-            partition: np.concatenate([group[partition] for group in group_indices])
-            for partition in Partition
+            phase: np.concatenate([group[phase] for group in group_indices])
+            for phase in Phase
         }
 
         mask_fields: dict[str, Field] = {}
-        for partition in Partition:
-            if len(indices[partition]) == 0:
+        for phase in Phase:
+            if len(indices[phase]) == 0:
                 raise ValueError
             mask = np.full(interaction_frame.num_elements, False)
-            mask[indices[partition]] = True
-            mask_fields[partition.mask_field] = Field(bool_(), mask)
+            mask[indices[phase]] = True
+            mask_fields[phase.mask_field] = Field(bool_(), mask)
         interaction_frame = Frame({**interaction_frame, **mask_fields})
 
         logger.debug("  # raw interactions: %d", interaction_frame.num_elements)
-        num_training = len(indices[Partition.TRAINING])
-        num_validation = len(indices[Partition.VALIDATION])
-        num_test = len(indices[Partition.TEST])
+        num_training = len(indices[Phase.TRAINING])
+        num_validation = len(indices[Phase.VALIDATION])
+        num_test = len(indices[Phase.TEST])
         total_num = num_training + num_validation + num_test
         logger.debug("  # total interactions: %d", total_num)
         logger.debug("  # training interactions: %d", num_training)
@@ -116,14 +116,14 @@ class RatioSplitter(RecSplitter):
         normalized_ratio = tuple(r / sum(self.ratio) for r in self.ratio)
         object.__setattr__(self, "ratio", normalized_ratio)
 
-    def generate_indices(self, index_array: np.ndarray) -> dict[Partition, np.ndarray]:
+    def generate_indices(self, index_array: np.ndarray) -> dict[Phase, np.ndarray]:
         total_num = len(index_array)
         val_num = int(np.floor(self.ratio[1] * total_num))
         test_num = int(np.floor(self.ratio[2] * total_num))
         return {
-            Partition.TRAINING: index_array[: -val_num - test_num],
-            Partition.VALIDATION: index_array[-val_num - test_num : -test_num],
-            Partition.TEST: index_array[-test_num:],
+            Phase.TRAINING: index_array[: -val_num - test_num],
+            Phase.VALIDATION: index_array[-val_num - test_num : -test_num],
+            Phase.TEST: index_array[-test_num:],
         }
 
 
@@ -134,12 +134,12 @@ class LeaveOneOutSplitter(RecSplitter):
     order_by_time: bool = True
     group_by_uid: bool = True
 
-    def generate_indices(self, index_array: np.ndarray) -> dict[Partition, np.ndarray]:
+    def generate_indices(self, index_array: np.ndarray) -> dict[Phase, np.ndarray]:
         total_num = len(index_array)
         val_num = 1 if total_num >= 3 else 0
         test_num = 1 if total_num >= 3 else 0
         return {
-            Partition.TRAINING: index_array[: -val_num - test_num],
-            Partition.VALIDATION: index_array[-val_num - test_num : -test_num],
-            Partition.TEST: index_array[-test_num:],
+            Phase.TRAINING: index_array[: -val_num - test_num],
+            Phase.VALIDATION: index_array[-val_num - test_num : -test_num],
+            Phase.TEST: index_array[-test_num:],
         }

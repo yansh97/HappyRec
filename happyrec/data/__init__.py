@@ -1,13 +1,4 @@
-from .core import (
-    Data,
-    DataInfo,
-    ElementType,
-    Field,
-    FieldType,
-    Frame,
-    Partition,
-    Source,
-)
+from .core import Data, DataInfo, ElementType, Field, FieldType, Frame, Phase, Source
 
 __all__ = [
     "ElementType",
@@ -15,7 +6,7 @@ __all__ = [
     "Field",
     "Frame",
     "Source",
-    "Partition",
+    "Phase",
     "Data",
     "DataInfo",
 ]

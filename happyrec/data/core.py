@@ -505,17 +505,17 @@ class Source(Enum):
 
 
 @unique
-class Partition(Enum):
-    """Partition of the data after splitting."""
+class Phase(Enum):
+    """Phase."""
 
     TRAINING = "training"
-    """Training partition."""
+    """Training phase."""
 
     VALIDATION = "validation"
-    """Validation partition."""
+    """Validation phase."""
 
     TEST = "test"
-    """Test partition."""
+    """Test phase."""
 
     def __repr__(self) -> str:
         return str(self)
@@ -524,22 +524,22 @@ class Partition(Enum):
     def mask_field(self) -> str:
         """Mask field name."""
         match self:
-            case Partition.TRAINING:
+            case Phase.TRAINING:
                 return TRAIN_MASK
-            case Partition.VALIDATION:
+            case Phase.VALIDATION:
                 return VAL_MASK
-            case Partition.TEST:
+            case Phase.TEST:
                 return TEST_MASK
 
     @property
     def neg_iids_field(self) -> str:
         """Negative IIDs field name."""
         match self:
-            case Partition.TRAINING:
+            case Phase.TRAINING:
                 raise ValueError
-            case Partition.VALIDATION:
+            case Phase.VALIDATION:
                 return VAL_NEG_IIDS
-            case Partition.TEST:
+            case Phase.TEST:
                 return TEST_NEG_IIDS
 
 
@@ -638,29 +638,28 @@ class Data(Mapping[str, Frame]):
         return {TRAIN_MASK, VAL_MASK, TEST_MASK}.issubset(self[Source.INTERACTION])
 
     @property
-    def num_partition_interactions(self) -> dict[Partition, int]:
-        """The number of interactions in each partition."""
+    def num_phase_interactions(self) -> dict[Phase, int]:
+        """The number of interactions in each phase."""
         interaction_frame = self[Source.INTERACTION]
         return {
-            partition: interaction_frame[partition.mask_field].value.sum()
-            for partition in Partition
+            phase: interaction_frame[phase.mask_field].value.sum() for phase in Phase
         }
 
     @property
-    def partition_data(self) -> dict[Partition, "Data"]:
-        """The data for each partition."""
+    def phase_data(self) -> dict[Phase, "Data"]:
+        """The data for each phase."""
         interaction_frame = self[Source.INTERACTION]
         user_frame = self[Source.USER]
         item_frame = self[Source.ITEM]
         return {
-            partition: Data.from_frames(
+            phase: Data.from_frames(
                 interaction_frame.loc_elements[
-                    interaction_frame[partition.mask_field].value
+                    interaction_frame[phase.mask_field].value
                 ],
                 user_frame,
                 item_frame,
             )
-            for partition in Partition
+            for phase in Phase
         }
 
     @property
@@ -669,13 +668,13 @@ class Data(Mapping[str, Frame]):
         return {VAL_NEG_IIDS, TEST_NEG_IIDS}.issubset(self[Source.USER])
 
     @property
-    def num_eval_negative_samples(self) -> dict[Partition, int]:
-        """The number of evaluation negative samples in each partition."""
+    def num_eval_negative_samples(self) -> dict[Phase, int]:
+        """The number of evaluation negative samples in each phase."""
         user_frame = self[Source.USER]
         return {
-            partition: user_frame[partition.neg_iids_field].value.shape[1]
-            for partition in Partition
-            if partition != Partition.TRAINING
+            phase: user_frame[phase.neg_iids_field].value.shape[1]
+            for phase in Phase
+            if phase != Phase.TRAINING
         }
 
     @property
@@ -765,9 +764,9 @@ class Data(Mapping[str, Frame]):
         print(f"with timestamp: {self.has_timestamp}")
         print(f"splitted: {self.is_splitted}")
         if self.is_splitted:
-            for partition in Partition:
-                num = self.num_partition_interactions[partition]
-                print(f"  # {partition.value} interactions: {num}")
+            for phase in Phase:
+                num = self.num_phase_interactions[phase]
+                print(f"  # {phase.value} interactions: {num}")
         print(f"Base fields of interactions: {self.base_fields[Source.INTERACTION]}")
         print(
             f"Context fields of interactions: {self.context_fields[Source.INTERACTION]}"
@@ -777,9 +776,9 @@ class Data(Mapping[str, Frame]):
         print(f"# users: {self.num_elements[Source.USER]}")
         print(f"with evaluation negative samples: {self.has_eval_negative_samples}")
         if self.has_eval_negative_samples:
-            num_val = self.num_eval_negative_samples[Partition.VALIDATION]
+            num_val = self.num_eval_negative_samples[Phase.VALIDATION]
             print(f"  # validation negative samples: {num_val}")
-            num_test = self.num_eval_negative_samples[Partition.TEST]
+            num_test = self.num_eval_negative_samples[Phase.TEST]
             print(f"  # test negative samples: {num_test}")
         print(f"Base fields of users: {self.base_fields[Source.USER]}")
         print(f"Context fields of users: {self.context_fields[Source.USER]}")

@@ -9,7 +9,7 @@ import numpy as np
 from ..constants import DEFAULT_SEED
 from ..utils.asserts import assert_type
 from ..utils.logger import logger
-from .core import Data, Field, Frame, Partition, Source
+from .core import Data, Field, Frame, Phase, Source
 from .field_types import category, list_
 from .predefined_fields import IID, UID
 from .transforms import assert_no_eval_negative_samples
@@ -26,7 +26,7 @@ class SampleDistribution(Enum):
 
 @dataclass(slots=True)
 class Sampler:
-    def setup(self, data: Data, partition: Partition) -> None:
+    def setup(self, data: Data, phase: Phase) -> None:
         raise NotImplementedError
 
     def sample_iids(self, size: int) -> np.ndarray:
@@ -66,12 +66,12 @@ class RecSampler(Sampler):
         self.uid_to_index = None
         self.user_iids_set = None
 
-    def setup(self, data: Data, partition: Partition) -> None:
+    def setup(self, data: Data, phase: Phase) -> None:
         interaction_frame = data[Source.INTERACTION]
         interaction_mask = np.full(interaction_frame.num_elements, False)
-        for p in Partition:
-            interaction_mask |= interaction_frame[partition.mask_field]
-            if p == partition:
+        for p in Phase:
+            interaction_mask |= interaction_frame[phase.mask_field]
+            if p == phase:
                 break
         interaction_frame = interaction_frame.loc_fields[[UID, IID]]
         interaction_frame = interaction_frame.loc_elements[interaction_mask]
@@ -164,13 +164,13 @@ class EvalNegativeSampler:
         user_frame = data[Source.USER]
 
         neg_iids_fields: dict[str, Field] = {}
-        for partition in (Partition.VALIDATION, Partition.TEST):
-            self.sampler.setup(data, partition)
+        for phase in (Phase.VALIDATION, Phase.TEST):
+            self.sampler.setup(data, phase)
             neg_iids_field = Field(
                 list_(category(), self.size),
                 self.sampler.sample_iids_by_uids(user_frame[UID].value, self.size),
             )
-            neg_iids_fields[partition.neg_iids_field] = neg_iids_field
+            neg_iids_fields[phase.neg_iids_field] = neg_iids_field
 
         user_frame = Frame({**user_frame, **neg_iids_fields})
 
