@@ -66,15 +66,18 @@ class RecSampler(Sampler):
         self.uid_to_index = None
         self.user_iids_set = None
 
-    def setup(self, data: Data, phase: Phase) -> None:
-        interaction_frame = data[Source.INTERACTION]
-        interaction_mask = np.full(interaction_frame.num_elements, False)
-        for p in Phase:
-            interaction_mask |= interaction_frame[phase.mask_field]
-            if p == phase:
-                break
-        interaction_frame = interaction_frame.loc_fields[[UID, IID]]
-        interaction_frame = interaction_frame.loc_elements[interaction_mask]
+    def setup(self, data: Data, phase: Phase | None) -> None:
+        if phase is None:
+            interaction_frame = data[Source.INTERACTION].loc_fields[[UID, IID]]
+        else:
+            interaction_frame = data[Source.INTERACTION]
+            interaction_mask = np.full(interaction_frame.num_elements, False)
+            for p in Phase:
+                interaction_mask |= interaction_frame[phase.mask_field]
+                if p == phase:
+                    break
+            interaction_frame = interaction_frame.loc_fields[[UID, IID]]
+            interaction_frame = interaction_frame.loc_elements[interaction_mask]
 
         user_frame = data[Source.USER]
         item_frame = data[Source.ITEM]
