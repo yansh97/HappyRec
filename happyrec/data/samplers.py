@@ -1,5 +1,5 @@
 import operator
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import KW_ONLY, dataclass, field
 from enum import Enum, unique
 from typing import Any, Callable
@@ -20,6 +20,9 @@ class SampleDistribution(Enum):
     UNIFORM = "uniform"
     POPULARITY = "popularity"
 
+    def __repr__(self) -> str:
+        return str(self)
+
 
 @dataclass(slots=True)
 class Sampler:
@@ -34,7 +37,7 @@ class Sampler:
 
 
 @dataclass(slots=True)
-class RecSampler:
+class RecSampler(Sampler):
     _: KW_ONLY
     distribution: SampleDistribution = SampleDistribution.UNIFORM
     repeatable: bool = False
@@ -79,11 +82,15 @@ class RecSampler:
         self.iids = item_frame[IID].value
 
         if self.distribution == SampleDistribution.POPULARITY:
-            counter = Counter(interaction_frame[IID].value)
-            self.item_probs = np.vectorize(operator.getitem)(
-                counter, item_frame[IID].value
+            item_count_dict = defaultdict(int)
+            unique_iids, counts = np.unique(
+                interaction_frame[IID].value, return_counts=True
             )
-            self.item_probs = self.item_probs / interaction_frame.num_elements
+            item_count_dict.update(zip(unique_iids, counts))
+            item_counts = np.vectorize(operator.getitem)(
+                item_count_dict, item_frame[IID].value
+            )
+            self.item_probs = item_counts / interaction_frame.num_elements
 
         if not self.repeatable:
             self.uid_to_index = dict(
@@ -135,7 +142,8 @@ class RecSampler:
         return iids
 
 
-class EvalNegSampler:
+@dataclass(frozen=True, slots=True)
+class EvalNegativeSampler:
     size: int
     sampler: Sampler
 
@@ -146,7 +154,7 @@ class EvalNegSampler:
         assert_type(self.sampler, Sampler)
 
     def __call__(self, data: Data) -> Data:
-        logger.debug("Sampling evaluation negative items by %s ...", self.sampler)
+        logger.info("Sampling evaluation negative items by %s ...", repr(self))
         assert_no_eval_negative_samples(data)
         data = self.sample(data)
         data.validate()

@@ -1,7 +1,6 @@
 import operator
-from collections import Counter
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Literal
 
 import numpy as np
 
@@ -36,7 +35,7 @@ _array_contains: Callable[[set, np.ndarray], np.ndarray] = np.vectorize(
 @dataclass(frozen=True, slots=True)
 class DataTransform:
     def __call__(self, data: Data) -> Data:
-        logger.debug("Transforming data by %s ...", repr(self))
+        logger.info("Transforming data by %s ...", repr(self))
         assert_not_splitted(data)
         assert_no_eval_negative_samples(data)
         data = self.transform(data)
@@ -70,6 +69,38 @@ class RemoveNegativeInteractions(DataTransform):
         logger.debug(
             "  Filtered interactions: %d -> %d",
             len(interaction_mask),
+            interaction_frame.num_elements,
+        )
+
+        return Data.from_frames(interaction_frame, data[Source.USER], data[Source.ITEM])
+
+
+@dataclass(frozen=True, slots=True)
+class RemoveDuplicateInteractions(DataTransform):
+    keep: Literal["first", "last"]
+
+    def __post_init__(self) -> None:
+        if self.keep not in {"first", "last"}:
+            raise ValueError
+
+    def transform(self, data: Data) -> Data:
+        interaction_frame = data[Source.INTERACTION]
+
+        uid_codes = np.unique(interaction_frame[UID].value, return_inverse=True)[1]
+        iid_codes = np.unique(interaction_frame[IID].value, return_inverse=True)[1]
+        codes = uid_codes.astype(object) * len(iid_codes) + iid_codes
+        match self.keep:
+            case "first":
+                indices = np.sort(np.unique(codes, return_index=True)[1])
+            case "last":
+                indices = np.sort(
+                    len(codes) - 1 - np.unique(codes[::-1], return_index=True)[1]
+                )
+        num_interactions = interaction_frame.num_elements
+        interaction_frame = interaction_frame.loc_elements[indices]
+        logger.debug(
+            "  Filtered interactions: %d -> %d",
+            num_interactions,
             interaction_frame.num_elements,
         )
 
@@ -143,14 +174,12 @@ class FilterKCoreInteractions(DataTransform):
         while True:
             interaction_mask = np.full(len(uids), True)
             if self.filter_by_users:
-                uid_set = set(
-                    uid for uid, count in Counter(uids).items() if count >= self.k
-                )
+                unique_uids, counts = np.unique(uids, return_counts=True)
+                uid_set = set(unique_uids[counts >= self.k])
                 interaction_mask &= _array_contains(uid_set, uids)
             if self.filter_by_items:
-                iid_set = set(
-                    iid for iid, count in Counter(iids).items() if count >= self.k
-                )
+                unique_iids, counts = np.unique(iids, return_counts=True)
+                iid_set = set(unique_iids[counts >= self.k])
                 interaction_mask &= _array_contains(iid_set, iids)
             uids = uids[interaction_mask]
             iids = iids[interaction_mask]

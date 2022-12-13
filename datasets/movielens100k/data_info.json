@@ -1,0 +1,192 @@
+{
+    "description": "MovieLens 100K movie ratings. Stable benchmark dataset. 100,000 ratings from 1000 users on 1700 movies. Released 4/1998.",
+    "citation": "@article{harper2015movielens,\n  title={The movielens datasets: History and context},\n  author={Harper, F Maxwell and Konstan, Joseph A},\n  journal={Acm transactions on interactive intelligent systems (tiis)},\n  volume={5},\n  number={4},\n  pages={1--19},\n  year={2015},\n  publisher={ACM New York, NY, USA}\n}",
+    "homepage": "https://grouplens.org/datasets/movielens/100k/",
+    "num_elements": {
+        "interaction": 100000,
+        "user": 943,
+        "item": 1682
+    },
+    "base_fields": {
+        "interaction": {
+            "uid": {
+                "field type": "scalar<category>",
+                "dtype": "int16",
+                "shape": [
+                    100000
+                ],
+                "non-null count": 100000,
+                "mean": null,
+                "min": 1,
+                "max": 943
+            },
+            "iid": {
+                "field type": "scalar<category>",
+                "dtype": "int16",
+                "shape": [
+                    100000
+                ],
+                "non-null count": 100000,
+                "mean": null,
+                "min": 1,
+                "max": 1682
+            },
+            "label": {
+                "field type": "scalar<int>",
+                "dtype": "int8",
+                "shape": [
+                    100000
+                ],
+                "non-null count": 100000,
+                "mean": 3.52986,
+                "min": 1,
+                "max": 5
+            },
+            "timestamp": {
+                "field type": "scalar<int>",
+                "dtype": "int32",
+                "shape": [
+                    100000
+                ],
+                "non-null count": 100000,
+                "mean": 883528851.48862,
+                "min": 874724710,
+                "max": 893286638
+            }
+        },
+        "user": {
+            "uid": {
+                "field type": "scalar<category>",
+                "dtype": "int16",
+                "shape": [
+                    943
+                ],
+                "non-null count": 943,
+                "mean": null,
+                "min": 1,
+                "max": 943
+            }
+        },
+        "item": {
+            "iid": {
+                "field type": "scalar<category>",
+                "dtype": "int16",
+                "shape": [
+                    1682
+                ],
+                "non-null count": 1682,
+                "mean": null,
+                "min": 1,
+                "max": 1682
+            }
+        }
+    },
+    "context_fields": {
+        "interaction": {},
+        "user": {
+            "age": {
+                "field type": "scalar<int>",
+                "dtype": "int8",
+                "shape": [
+                    943
+                ],
+                "non-null count": 943,
+                "mean": 34.05196182396607,
+                "min": 7,
+                "max": 73
+            },
+            "gender": {
+                "field type": "scalar<category>",
+                "dtype": "object",
+                "shape": [
+                    943
+                ],
+                "non-null count": 943,
+                "mean": null,
+                "min": "F",
+                "max": "M"
+            },
+            "occupation": {
+                "field type": "scalar<category>",
+                "dtype": "object",
+                "shape": [
+                    943
+                ],
+                "non-null count": 943,
+                "mean": null,
+                "min": "administrator",
+                "max": "writer"
+            },
+            "zip_code": {
+                "field type": "scalar<category>",
+                "dtype": "object",
+                "shape": [
+                    943
+                ],
+                "non-null count": 943,
+                "mean": null,
+                "min": "00000",
+                "max": "Y1A6B"
+            }
+        },
+        "item": {
+            "title": {
+                "field type": "scalar<string>",
+                "dtype": "object",
+                "shape": [
+                    1682
+                ],
+                "non-null count": 1682,
+                "mean": null,
+                "min": null,
+                "max": null
+            },
+            "release_date": {
+                "field type": "scalar<string>",
+                "dtype": "object",
+                "shape": [
+                    1682
+                ],
+                "non-null count": 1681,
+                "mean": null,
+                "min": null,
+                "max": null
+            },
+            "genres": {
+                "field type": "list<category>",
+                "dtype": "object",
+                "shape": [
+                    1682,
+                    [
+                        1,
+                        6
+                    ]
+                ],
+                "non-null count": 1682,
+                "mean": null,
+                "min": "Action",
+                "max": "unknown"
+            }
+        }
+    },
+    "files_size": {
+        "interaction": 900632,
+        "user": 14374,
+        "item": 124547
+    },
+    "files_checksum": {
+        "interaction": "adb87849921c9206b239d09231e01ee40d0a30a9a3ed1fcf1fe988dba4aa9742",
+        "user": "db8c30d0d07c4af29dfd4b65d5b75de7b138372de8b542ba6def3815a5403666",
+        "item": "a1ab881a12db0255a381e4052c3358c9ed656c900d7ed4e4ebb97c4abe4b7341"
+    },
+    "compressed_files_size": {
+        "interaction": 248272,
+        "user": 6220,
+        "item": 26048
+    },
+    "compressed_files_checksum": {
+        "interaction": "c20f7aedf7b0362b23374411d4be10746ade62c294d5351391a1f03a2ba6dec6",
+        "user": "c39d8429a091e872289d7aa1d416b244ccd72bf8d6522b38b4ffe67df9e50f64",
+        "item": "9dca55d966eaf3a4328bf739bbcbb1c4870b5c10c160bed873d49c7b0d9801ab"
+    }
+}

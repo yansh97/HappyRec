@@ -14,7 +14,7 @@ from .transforms import assert_no_eval_negative_samples, assert_not_splitted
 @dataclass(frozen=True, slots=True)
 class Splitter:
     def __call__(self, data: Data) -> Data:
-        logger.debug("Splitting data by %s ...", repr(self))
+        logger.info("Splitting data by %s ...", repr(self))
         assert_not_splitted(data)
         assert_no_eval_negative_samples(data)
         data = self.split(data)
@@ -26,7 +26,7 @@ class Splitter:
 
 
 @dataclass(frozen=True, slots=True)
-class RecSplitter:
+class RecSplitter(Splitter):
     _: KW_ONLY
     ignore_negative_interactions: bool = False
     order_by_time: bool = False
@@ -84,6 +84,16 @@ class RecSplitter:
             mask[indices[partition]] = True
             mask_fields[partition.mask_field] = Field(bool_(), mask)
         interaction_frame = Frame({**interaction_frame, **mask_fields})
+
+        logger.debug("  # raw interactions: %d", interaction_frame.num_elements)
+        num_training = len(indices[Partition.TRAINING])
+        num_validation = len(indices[Partition.VALIDATION])
+        num_test = len(indices[Partition.TEST])
+        total_num = num_training + num_validation + num_test
+        logger.debug("  # total interactions: %d", total_num)
+        logger.debug("  # training interactions: %d", num_training)
+        logger.debug("  # validation interactions: %d", num_validation)
+        logger.debug("  # test interactions: %d", num_test)
 
         return Data.from_frames(interaction_frame, data[Source.USER], data[Source.ITEM])
 
