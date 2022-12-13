@@ -77,7 +77,7 @@ class RemoveNegativeInteractions(DataTransform):
 
 @dataclass(frozen=True, slots=True)
 class RemoveDuplicateInteractions(DataTransform):
-    keep: Literal["first", "last"]
+    keep: Literal["first", "last"] = "first"
 
     def __post_init__(self) -> None:
         if self.keep not in {"first", "last"}:

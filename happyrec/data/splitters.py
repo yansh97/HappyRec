@@ -28,9 +28,9 @@ class Splitter:
 @dataclass(frozen=True, slots=True)
 class RecSplitter(Splitter):
     _: KW_ONLY
-    ignore_negative_interactions: bool = False
-    order_by_time: bool = False
-    group_by_uid: bool = False
+    ignore_negative_interactions: bool
+    order_by_time: bool
+    group_by_uid: bool
     seed: int = DEFAULT_SEED
     rng: np.random.Generator = field(init=False, repr=False, hash=False, compare=False)
 
@@ -101,6 +101,10 @@ class RecSplitter(Splitter):
 @dataclass(frozen=True, slots=True)
 class RatioSplitter(RecSplitter):
     ratio: tuple[float, float, float]
+    _: KW_ONLY
+    ignore_negative_interactions: bool = False
+    order_by_time: bool = False
+    group_by_uid: bool = False
 
     def __post_init__(self) -> None:
         RecSplitter.__post_init__(self)
@@ -125,6 +129,11 @@ class RatioSplitter(RecSplitter):
 
 @dataclass(frozen=True, slots=True)
 class LeaveOneOutSplitter(RecSplitter):
+    _: KW_ONLY
+    ignore_negative_interactions: bool = True
+    order_by_time: bool = True
+    group_by_uid: bool = True
+
     def generate_indices(self, index_array: np.ndarray) -> dict[Partition, np.ndarray]:
         total_num = len(index_array)
         val_num = 1 if total_num >= 3 else 0
