@@ -12,7 +12,7 @@ from selectolax.parser import HTMLParser
 
 from happyrec.data import DataInfo, Frame
 from happyrec.data import field_types as ftp
-from happyrec.data.predefined_fields import IID, LABEL, TIMESTAMP, UID
+from happyrec.data.fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.logger import logger
 from happyrec.utils.preprocessing import (
     convert_dataframe_to_frame,

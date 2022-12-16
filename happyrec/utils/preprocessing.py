@@ -13,7 +13,7 @@ from rich.progress import track
 
 from ..data import Data, Field, FieldType, Frame
 from ..data.field_types import FixedSizeListFtype, ListFtype, ScalarFtype, category
-from ..data.predefined_fields import IID, UID
+from ..data.fields import IID, UID
 from .asserts import assert_never_type
 from .logger import logger
 

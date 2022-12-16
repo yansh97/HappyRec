@@ -304,46 +304,6 @@ class ImageEtype(ElementType):
 
 
 @dataclass(frozen=True, slots=True)
-class ObjectEtype(ElementType):
-    def __str__(self) -> str:
-        return "object"
-
-    def _can_be_nested(self) -> bool:
-        return False
-
-    def _can_hold_null(self) -> bool:
-        return True
-
-    def _can_be_sorted(self) -> bool:
-        return False
-
-    def _non_null_count(self, array: np.ndarray) -> int:
-        _assert_1d_array(array)
-        return len(array) - int(np.vectorize(isinstance)(array, type(None)).sum())
-
-    def _mean(self, array: np.ndarray) -> None:
-        _assert_1d_array(array)
-        return None
-
-    def _min(self, array: np.ndarray) -> None:
-        _assert_1d_array(array)
-        return None
-
-    def _max(self, array: np.ndarray) -> None:
-        _assert_1d_array(array)
-        return None
-
-    def _check_value_data(self, array: np.ndarray, dtype: str) -> None:
-        _assert_1d_array(array)
-        if dtype != "object":
-            raise ValueError
-
-    def _to_str_array(self, array: np.ndarray) -> np.ndarray:
-        _assert_1d_array(array)
-        return np.vectorize(repr)(array).astype(object)
-
-
-@dataclass(frozen=True, slots=True)
 class ScalarFtype(FieldType):
     @property
     def name(self) -> str:
@@ -572,10 +532,6 @@ def string() -> FieldType:
 
 def image() -> FieldType:
     return ScalarFtype(ImageEtype())
-
-
-def object_() -> FieldType:
-    return ScalarFtype(ObjectEtype())
 
 
 def list_(type_: FieldType, length: int | None = None) -> FieldType:

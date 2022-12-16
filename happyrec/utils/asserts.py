@@ -14,20 +14,20 @@ VT = TypeVar("VT")
 
 def assert_type(value, expected_type: type) -> None:
     if not isinstance(value, expected_type):
-        raise TypeError(f"Expected type {expected_type}, got {type(value)}")
+        raise TypeError
 
 
 def assert_never_type(value) -> Never:
-    raise TypeError(f"Unexpected type: {type(value)}")
+    raise TypeError
 
 
-def assert_typed_list(value, item_type: type[IT]) -> TypeGuard[list[IT]]:
+def is_typed_list(value, item_type: type[IT]) -> TypeGuard[list[IT]]:
     if not isinstance(value, list):
         return False
     return all(isinstance(item, item_type) for item in value)
 
 
-def assert_typed_dict(
+def is_typed_dict(
     value, key_type: type[KT], value_type: type[VT]
 ) -> TypeGuard[dict[KT, VT]]:
     if not isinstance(value, dict):

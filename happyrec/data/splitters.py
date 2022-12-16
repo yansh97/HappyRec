@@ -7,7 +7,7 @@ from ..utils.asserts import assert_type
 from ..utils.logger import logger
 from .core import Data, Field, Frame, Phase, Source
 from .field_types import bool_, int_
-from .predefined_fields import LABEL, TIMESTAMP, UID
+from .fields import LABEL, TIMESTAMP, UID
 from .transforms import assert_no_eval_negative_samples, assert_not_splitted
 
 

@@ -4,7 +4,7 @@ from typing import Callable, Literal
 
 import numpy as np
 
-from ..utils.asserts import assert_never_type, assert_type, assert_typed_list
+from ..utils.asserts import assert_never_type, assert_type, is_typed_list
 from ..utils.logger import logger
 from .core import Data, Field, Frame, Source
 from .field_types import (
@@ -14,7 +14,7 @@ from .field_types import (
     ScalarFtype,
     category,
 )
-from .predefined_fields import IID, LABEL, UID
+from .fields import IID, LABEL, UID
 
 
 def assert_not_splitted(data: Data) -> None:
@@ -51,7 +51,7 @@ class Compose(DataTransform):
     transforms: list[DataTransform]
 
     def __post_init__(self) -> None:
-        assert_typed_list(self.transforms, DataTransform)
+        is_typed_list(self.transforms, DataTransform)
 
     def transform(self, data: Data) -> Data:
         for transform in self.transforms:

@@ -11,7 +11,7 @@ from ..utils.asserts import assert_type
 from ..utils.logger import logger
 from .core import Data, Field, Frame, Phase, Source
 from .field_types import category, list_
-from .predefined_fields import IID, UID
+from .fields import IID, UID
 from .transforms import assert_no_eval_negative_samples
 
 

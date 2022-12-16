@@ -12,15 +12,10 @@ import numpy as np
 import pandas as pd
 
 from ..constants import FIELD_SEP
-from ..utils.asserts import (
-    assert_never_type,
-    assert_type,
-    assert_typed_dict,
-    assert_typed_list,
-)
+from ..utils.asserts import assert_never_type, assert_type, is_typed_dict, is_typed_list
 from ..utils.file import checksum, compress
 from ..utils.logger import logger
-from .predefined_fields import (
+from .fields import (
     IID,
     LABEL,
     TEST_MASK,
@@ -202,8 +197,8 @@ class Field(Sequence):
             if isinstance(index, slice):
                 return Field(self.field.ftype, self.field.value[index].copy())
             if (
-                assert_typed_list(index, int)
-                or assert_typed_list(index, bool)
+                is_typed_list(index, int)
+                or is_typed_list(index, bool)
                 or isinstance(index, np.ndarray)
             ):
                 return Field(self.field.ftype, self.field.value[index])
@@ -258,7 +253,7 @@ class Frame(Mapping[str, Field]):
     fields: dict[str, Field]
 
     def __post_init__(self) -> None:
-        if not assert_typed_dict(self.fields, str, Field):
+        if not is_typed_dict(self.fields, str, Field):
             raise TypeError
 
         if len(self.fields) <= 1:
@@ -458,8 +453,8 @@ class Frame(Mapping[str, Field]):
                 return {name: field[index] for name, field in self.frame.items()}
             if (
                 isinstance(index, slice)
-                or assert_typed_list(index, int)
-                or assert_typed_list(index, bool)
+                or is_typed_list(index, int)
+                or is_typed_list(index, bool)
                 or isinstance(index, np.ndarray)
             ):
                 return Frame(
@@ -482,7 +477,7 @@ class Frame(Mapping[str, Field]):
         def __getitem__(self, index):
             if isinstance(index, str):
                 return self.frame[index]
-            if assert_typed_list(index, str):
+            if is_typed_list(index, str):
                 return Frame({k: self.frame[k] for k in index})
             assert_never_type(index)
 
@@ -548,7 +543,7 @@ class Data(Mapping[str, Frame]):
     frames: dict[Source, Frame]
 
     def __post_init__(self) -> None:
-        if not assert_typed_dict(self.frames, Source, Frame):
+        if not is_typed_dict(self.frames, Source, Frame):
             raise ValueError
 
         if len(self.frames) != 3:
@@ -864,7 +859,7 @@ class DataInfo:
             }
         return fields
 
-    def print_field_info(self, max_colwidth: int | None = 25) -> None:
+    def info(self, max_colwidth: int | None = 25) -> None:
         """Print the field information."""
         fields = self.fields
         for source, field_info in fields.items():
