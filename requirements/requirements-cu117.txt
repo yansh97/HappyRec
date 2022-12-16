@@ -19,6 +19,9 @@ torch-spline-conv
 torch-geometric
 
 transformers
+accelerate
+
+tensorboard
 
 jsonargparse[signatures]
 pytorch-lightning
