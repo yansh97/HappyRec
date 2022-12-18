@@ -4,9 +4,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from happyrec.constants import IID, LABEL, TIMESTAMP, UID
 from happyrec.data import DataInfo, Frame
 from happyrec.data import field_types as ftp
-from happyrec.data.fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.logger import logger
 from happyrec.utils.preprocessing import convert_dataframe_to_frame, create_data
 
@@ -190,11 +190,11 @@ def preprocess() -> None:
     user_frame = create_user_frame(RAW_XING_DIR / "users.csv")
     item_frame = create_item_frame(RAW_XING_DIR / "items.csv")
 
-    data = create_data(interaction_frame, user_frame, item_frame)
+    data, category_info = create_data(interaction_frame, user_frame, item_frame)
 
     print(data)
     data.info()
-    data.to_pickle(XING_DIR)
+    data.to_feather(XING_DIR)
 
     data_info = DataInfo.from_data_files(
         XING_DIR,
@@ -203,6 +203,8 @@ def preprocess() -> None:
         homepage=XING_HOMEPAGE,
     )
     data_info.to_json(XING_DIR)
+
+    category_info.to_json(XING_DIR)
 
 
 if __name__ == "__main__":

@@ -4,9 +4,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from happyrec.constants import IID, LABEL, TIMESTAMP, UID
 from happyrec.data import DataInfo, Frame
 from happyrec.data import field_types as ftp
-from happyrec.data.fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.logger import logger
 from happyrec.utils.preprocessing import convert_dataframe_to_frame, create_data
 
@@ -77,11 +77,11 @@ def preprocess() -> None:
         RAW_GOWALLA_DIR / "loc-gowalla_totalCheckins.txt"
     )
 
-    data = create_data(interaction_frame, None, item_frame)
+    data, category_info = create_data(interaction_frame, None, item_frame)
 
     print(data)
     data.info()
-    data.to_pickle(GOWALLA_DIR)
+    data.to_feather(GOWALLA_DIR)
 
     data_info = DataInfo.from_data_files(
         GOWALLA_DIR,
@@ -90,6 +90,8 @@ def preprocess() -> None:
         homepage=GOWALLA_HOMEPAGE,
     )
     data_info.to_json(GOWALLA_DIR)
+
+    category_info.to_json(GOWALLA_DIR)
 
 
 if __name__ == "__main__":

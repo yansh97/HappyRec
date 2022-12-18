@@ -4,9 +4,9 @@ from pathlib import Path
 import pandas as pd
 from rich.progress import track
 
+from happyrec.constants import IID, LABEL, TIMESTAMP, UID
 from happyrec.data import DataInfo, Frame
 from happyrec.data import field_types as ftp
-from happyrec.data.fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.logger import logger
 from happyrec.utils.preprocessing import convert_dataframe_to_frame, create_data
 
@@ -86,7 +86,7 @@ def create_item_frame(item_file: Path, num_items: int) -> Frame:
         {
             IID: ftp.category(),
             "year": ftp.int_(),
-            "title": ftp.string(),
+            "title": ftp.text(),
         },
         item_frame,
     )
@@ -103,11 +103,11 @@ def preprocess() -> None:
     )
     item_frame = create_item_frame(RAW_NETFLIX_DIR / "movie_titles.csv", 17770)
 
-    data = create_data(interaction_frame, None, item_frame)
+    data, category_info = create_data(interaction_frame, None, item_frame)
 
     print(data)
     data.info()
-    data.to_pickle(NETFLIX_DIR)
+    data.to_feather(NETFLIX_DIR)
 
     data_info = DataInfo.from_data_files(
         NETFLIX_DIR,
@@ -116,6 +116,8 @@ def preprocess() -> None:
         homepage=NETFLIX_HOMEPAGE,
     )
     data_info.to_json(NETFLIX_DIR)
+
+    category_info.to_json(NETFLIX_DIR)
 
 
 if __name__ == "__main__":

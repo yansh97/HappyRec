@@ -5,9 +5,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from happyrec.constants import IID, LABEL, TIMESTAMP, UID
 from happyrec.data import DataInfo, Frame
 from happyrec.data import field_types as ftp
-from happyrec.data.fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.logger import logger
 from happyrec.utils.preprocessing import convert_dataframe_to_frame, create_data
 
@@ -209,18 +209,17 @@ def preprocess(
     input_dir = Path(input_dir)
     output_dir = Path(output_dir)
 
-    pd.set_option("display.max_columns", None)
     interaction_frame = create_interaction_frame(
         input_dir / "inter_impression.csv", num_interactions
     )
     user_frame = create_user_frame(input_dir / "info_user.csv", num_users)
     item_frame = create_item_frame(input_dir / "info_answer.csv", num_items)
 
-    data = create_data(interaction_frame, user_frame, item_frame)
+    data, category_info = create_data(interaction_frame, user_frame, item_frame)
 
     print(data)
     data.info()
-    data.to_pickle(output_dir)
+    data.to_feather(output_dir)
 
     data_info = DataInfo.from_data_files(
         output_dir,
@@ -229,6 +228,8 @@ def preprocess(
         homepage=ZHIHUREC_HOMEPAGE,
     )
     data_info.to_json(output_dir)
+
+    category_info.to_json(output_dir)
 
 
 if __name__ == "__main__":

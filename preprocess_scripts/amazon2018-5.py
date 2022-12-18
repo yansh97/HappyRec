@@ -1,22 +1,24 @@
 import gc
 import logging
-import operator
 import re
+from collections import defaultdict
 from functools import partial
 from os import PathLike
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.feather as feather
 from selectolax.parser import HTMLParser
 
+from happyrec.constants import IID, LABEL, TIMESTAMP, UID
 from happyrec.data import DataInfo, Frame
 from happyrec.data import field_types as ftp
-from happyrec.data.fields import IID, LABEL, TIMESTAMP, UID
+from happyrec.utils.asserts import is_typed_list
 from happyrec.utils.logger import logger
 from happyrec.utils.preprocessing import (
     convert_dataframe_to_frame,
-    convert_image_to_array,
+    convert_image_to_jpeg,
     create_data,
     load_from_jsonline,
     parallelize,
@@ -82,38 +84,29 @@ SUBSETS: dict[str, tuple[int, int]] = {
 BLANK_PATTERN = re.compile(r"\s+")
 
 
-def clean_text(item: str | None) -> str | None:
-    text = None
+def clean_text(item: str | None) -> str:
+    if isinstance(item, str):
+        return re.sub(BLANK_PATTERN, " ", HTMLParser(item).text()).strip()
+    return ""
+
+
+def clean_text_list(item: str | list[str] | None) -> str:
+    if is_typed_list(item, str):
+        item = ". ".join([i.strip() for i in item])
     if isinstance(item, str):
         item = re.sub(BLANK_PATTERN, " ", HTMLParser(item).text()).strip()
-        if len(item) > 0:
-            text = item
-    return text
+    return ""
 
 
-def clean_text_list(item: str | list[str] | None) -> str | None:
-    text = None
-    if isinstance(item, list):
-        item = ". ".join(item)
-    if isinstance(item, str):
-        item = re.sub(BLANK_PATTERN, " ", HTMLParser(item).text()).strip()
-        if len(item) > 0:
-            text = item
-    return text
-
-
-def read_image(
-    image_dir: Path, item: str | list[str] | None
-) -> tuple[np.ndarray | None, str | None]:
+def clean_image_url(image_filenames: set[str], item: str | list[str] | None) -> str:
     if isinstance(item, str):
         item = [item]
-    if isinstance(item, list) and len(item) > 0:
+    if is_typed_list(item, str) and len(item) > 0:
         for url in item:
             if isinstance(url, str) and len(url) > 0:
-                path = image_dir / url.rsplit("/", 1)[-1]
-                if path.exists():
-                    return convert_image_to_array(path), url
-    return None, None
+                if url.rsplit("/", 1)[-1] in image_filenames:
+                    return url
+    return ""
 
 
 def process_interaction_frame(dataframe: pd.DataFrame) -> pd.DataFrame | Exception:
@@ -152,24 +145,34 @@ def create_interaction_frame(
             IID: ftp.category(),
             LABEL: ftp.int_(),
             TIMESTAMP: ftp.int_(),
-            "summary_review": ftp.string(),
+            "summary_review": ftp.text(),
         },
         interaction_frame,
     )
 
 
 def process_item_frame(
-    image_dir: Path, dataframe: pd.DataFrame
+    image_filenames: set[str], dataframe: pd.DataFrame
 ) -> pd.DataFrame | Exception:
-    _read_image = partial(read_image, image_dir)
+    _clean_image_url = partial(clean_image_url, image_filenames)
     try:
         dataframe[IID] = dataframe[IID].str.strip()
         dataframe["title"] = dataframe["title"].map(clean_text)
         dataframe["brand"] = dataframe["brand"].map(clean_text)
         dataframe["description"] = dataframe["description"].map(clean_text_list)
-        images = dataframe["image"].map(_read_image)
-        dataframe["image"] = images.map(operator.itemgetter(0))
-        dataframe["image_url"] = images.map(operator.itemgetter(1))
+        dataframe["image_url"] = dataframe["image"].map(_clean_image_url)
+        dataframe["image_filename"] = dataframe["image_url"].map(
+            lambda url: url.rsplit("/", 1)[-1]
+        )
+        del dataframe["image"]
+        return dataframe
+    except Exception as e:
+        return e
+
+
+def process_item_image(dataframe: pd.DataFrame) -> pd.DataFrame | Exception:
+    try:
+        dataframe["image"] = dataframe["image"].map(convert_image_to_jpeg)
         return dataframe
     except Exception as e:
         return e
@@ -177,8 +180,8 @@ def process_item_frame(
 
 def create_item_frame(
     item_file: Path,
+    image_file: Path,
     interaction_frame: Frame,
-    image_dir: Path,
     num_items: int | None = None,
 ) -> Frame:
     item_context_frame: pd.DataFrame = load_from_jsonline(
@@ -194,25 +197,40 @@ def create_item_frame(
     del item_context_frame
     gc.collect()
 
-    _process_item_frame = partial(process_item_frame, image_dir)
+    image_table = feather.read_table(image_file, columns=["filename"])
+    image_filenames = set(image_table.column("filename").to_numpy())
+    _process_item_frame = partial(process_item_frame, image_filenames)
     item_frame = parallelize(item_frame, _process_item_frame)
+    del image_filenames, image_table
 
-    item_frame = item_frame[
-        [IID, "title", "brand", "description", "image", "image_url"]
-    ]
-    item_frame = item_frame.sort_values(by=IID, kind="stable", ignore_index=True)
-    item_frame = item_frame.drop_duplicates(
-        subset=[IID], keep="first", ignore_index=True
+    image_table = feather.read_table(image_file)
+    images: dict[str, bytes] = defaultdict(
+        bytes,
+        zip(
+            image_table.column("filename").to_numpy(),
+            image_table.column("content").to_numpy(),
+        ),
+    )
+    item_frame["image"] = item_frame["image_filename"].map(images.__getitem__)
+    del item_frame["image_filename"], images, image_table
+    gc.collect()
+
+    item_frame = parallelize(item_frame, process_item_image)
+
+    item_frame = (
+        item_frame[[IID, "title", "brand", "description", "image", "image_url"]]
+        .sort_values(by=IID, kind="stable", ignore_index=True)
+        .drop_duplicates(subset=[IID], keep="first", ignore_index=True)
     )
 
     return convert_dataframe_to_frame(
         {
             IID: ftp.category(),
-            "title": ftp.string(),
-            "brand": ftp.string(),
-            "description": ftp.string(),
+            "title": ftp.text(),
+            "brand": ftp.text(),
+            "description": ftp.text(),
             "image": ftp.image(),
-            "image_url": ftp.string(),
+            "image_url": ftp.text(),
         },
         item_frame,
     )
@@ -225,7 +243,6 @@ def preprocess(
     num_items: int | None = None,
 ) -> None:
     input_dir = Path(input_dir)
-    image_dir = next(input_dir.glob("images_*"))
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -233,14 +250,17 @@ def preprocess(
         next(input_dir.glob("reviews_*.json")), num_interactions
     )
     item_frame = create_item_frame(
-        next(input_dir.glob("meta_*.json")), interaction_frame, image_dir, num_items
+        next(input_dir.glob("meta_*.json")),
+        next(input_dir.glob("images_*")),
+        interaction_frame,
+        num_items,
     )
 
-    data = create_data(interaction_frame, None, item_frame)
+    data, category_info = create_data(interaction_frame, None, item_frame)
 
     print(data)
     data.info()
-    data.to_pickle(output_dir)
+    data.to_feather(output_dir)
 
     del data
     gc.collect()
@@ -252,6 +272,10 @@ def preprocess(
         homepage=AMAZON_2018_HOMEPAGE,
     )
     data_info.to_json(output_dir)
+
+    category_info.to_json(output_dir)
+
+    gc.collect()
 
 
 if __name__ == "__main__":
