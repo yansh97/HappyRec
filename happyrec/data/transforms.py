@@ -1,24 +1,28 @@
 import operator
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Callable, Literal, cast
 
 import numpy as np
 
+from ..constants import IID, LABEL, UID
 from ..utils.asserts import assert_never_type, assert_type, is_typed_list
 from ..utils.logger import logger
 from .core import Data, Field, Frame, Source
+from .data_info import CategoryInfo
 from .field_types import (
     CategoryEtype,
+    FieldType,
     FixedSizeListFtype,
+    ImageFtype,
     ListFtype,
     ScalarFtype,
+    TextFtype,
     category,
 )
-from .fields import IID, LABEL, UID
 
 
 def assert_not_splitted(data: Data) -> None:
-    if data.is_splitted:
+    if data.has_phase_mask:
         raise ValueError
 
 
@@ -52,6 +56,10 @@ class Compose(DataTransform):
 
     def __post_init__(self) -> None:
         is_typed_list(self.transforms, DataTransform)
+
+    @classmethod
+    def from_transforms(cls, *transforms: DataTransform) -> "Compose":
+        return cls(list(transforms))
 
     def transform(self, data: Data) -> Data:
         for transform in self.transforms:
@@ -213,33 +221,68 @@ class DowncastDtype(DataTransform):
 
 @dataclass(frozen=True, slots=True)
 class FactorizeCategoryFields(DataTransform):
+    category_info: CategoryInfo | None = None
+
+    def __post_init__(self) -> None:
+        if self.category_info is not None:
+            assert_type(self.category_info, CategoryInfo)
+
+    def _factorize_array(self, array: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        unique_value, factorized_value = np.unique(array, return_inverse=True)
+        return unique_value, factorized_value.astype(np.uint64)
+
+    def _factorize_scalar_field(self, field_name: str, field: Field) -> Field:
+        ftype = cast(ScalarFtype, field.ftype)
+        if not isinstance(ftype.element_type, CategoryEtype):
+            return field
+        unique_value, factorized_value = self._factorize_array(field.value)
+        if self.category_info is not None:
+            self.category_info.update(field_name, unique_value)
+        return Field(field.ftype, factorized_value)
+
+    def _factorize_fixed_size_list_field(self, field_name: str, field: Field) -> Field:
+        ftype = cast(FixedSizeListFtype, field.ftype)
+        if not isinstance(ftype.element_type, CategoryEtype):
+            return field
+        flat_value = field.value.reshape(-1)
+        unique_value, factorized_flat_value = self._factorize_array(flat_value)
+        factorized_value = factorized_flat_value.reshape(field.value.shape)
+        if self.category_info is not None:
+            self.category_info.update(field_name, unique_value)
+        return Field(field.ftype, factorized_value)
+
+    def _factorize_list_field(self, field_name: str, field: Field) -> Field:
+        ftype = cast(ListFtype, field.ftype)
+        if not isinstance(ftype.element_type, CategoryEtype):
+            return field
+        flat_value = np.concatenate(field.value)
+        unique_value, factorized_flat_value = self._factorize_array(flat_value)
+        sections = np.vectorize(len)(field.value).cumsum()[:-1].tolist()
+        factorized_value = np.fromiter(
+            np.split(factorized_flat_value, sections),
+            dtype=object,
+            count=len(field.value),
+        )
+        if self.category_info is not None:
+            self.category_info.update(field_name, unique_value)
+        return Field(field.ftype, factorized_value)
+
+    def _factorize_field(self, field_name: str, field: Field) -> Field:
+        ftype: FieldType = field.ftype
+        if isinstance(ftype, ScalarFtype):
+            return self._factorize_scalar_field(field_name, field)
+        elif isinstance(ftype, FixedSizeListFtype):
+            return self._factorize_fixed_size_list_field(field_name, field)
+        elif isinstance(ftype, ListFtype):
+            return self._factorize_list_field(field_name, field)
+        elif isinstance(ftype, TextFtype):
+            return field
+        elif isinstance(ftype, ImageFtype):
+            return field
+        else:
+            assert_never_type(ftype)
+
     def transform(self, data: Data) -> Data:
-        def _factorize_array(array: np.ndarray) -> np.ndarray:
-            return np.unique(array, return_inverse=True)[1]
-
-        def _factorize_field(field: Field) -> Field:
-            if not isinstance(field.ftype.element_type, CategoryEtype):
-                return field
-
-            if isinstance(field.ftype, ScalarFtype):
-                value = _factorize_array(field.value)
-            elif isinstance(field.ftype, FixedSizeListFtype):
-                value = _factorize_array(field.value.reshape(-1)).reshape(
-                    field.value.shape
-                )
-            elif isinstance(field.ftype, ListFtype):
-                value = np.fromiter(
-                    np.split(
-                        _factorize_array(np.concatenate(field.value)),
-                        np.vectorize(len)(field.value).cumsum()[:-1].tolist(),
-                    ),
-                    dtype=object,
-                    count=len(field.value),
-                )
-            else:
-                assert_never_type(field.ftype)
-            return Field(field.ftype, value)
-
         interaction_frame = data[Source.INTERACTION]
         user_frame = data[Source.USER]
         item_frame = data[Source.ITEM]
@@ -254,7 +297,7 @@ class FactorizeCategoryFields(DataTransform):
             category(),
             np.concatenate([interaction_frame[UID].value, user_frame[UID].value]),
         )
-        factorized_uid_field = _factorize_field(uid_field)
+        factorized_uid_field = self._factorize_field(UID, uid_field)
         factorized_interaction_fields[UID] = factorized_uid_field.loc[
             : interaction_frame.num_elements
         ]
@@ -267,7 +310,7 @@ class FactorizeCategoryFields(DataTransform):
             category(),
             np.concatenate([interaction_frame[IID].value, item_frame[IID].value]),
         )
-        factorized_iid_field = _factorize_field(iid_field)
+        factorized_iid_field = self._factorize_field(IID, iid_field)
         factorized_interaction_fields[IID] = factorized_iid_field.loc[
             : interaction_frame.num_elements
         ]
@@ -288,7 +331,7 @@ class FactorizeCategoryFields(DataTransform):
                 if name in (UID, IID):
                     continue
                 logger.debug("  Factorizing field %s ...", name)
-                factorized_frame[name] = _factorize_field(field)
+                factorized_frame[name] = self._factorize_field(name, field)
 
         return Data.from_frames(
             Frame(factorized_interaction_fields),

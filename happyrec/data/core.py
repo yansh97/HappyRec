@@ -1,8 +1,7 @@
 import copy
-import json
 import pickle
 from collections.abc import ItemsView, Iterator, KeysView, Mapping, Sequence, ValuesView
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from enum import Enum, unique
 from os import PathLike
 from pathlib import Path
@@ -10,12 +9,11 @@ from typing import Any, Literal, overload
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.feather as feather
 
-from ..constants import FIELD_SEP
-from ..utils.asserts import assert_never_type, assert_type, is_typed_dict, is_typed_list
-from ..utils.file import checksum, compress
-from ..utils.logger import logger
-from .fields import (
+from ..constants import (
+    FIELD_SEP,
     IID,
     LABEL,
     TEST_MASK,
@@ -26,91 +24,14 @@ from .fields import (
     VAL_MASK,
     VAL_NEG_IIDS,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class ElementType:
-    def __str__(self) -> str:
-        raise NotImplementedError
-
-    def _can_be_nested(self) -> bool:
-        raise NotImplementedError
-
-    def _can_hold_null(self) -> bool:
-        raise NotImplementedError
-
-    def _can_be_sorted(self) -> bool:
-        raise NotImplementedError
-
-    def _non_null_count(self, array: np.ndarray) -> int:
-        raise NotImplementedError
-
-    def _mean(self, array: np.ndarray) -> float | None:
-        raise NotImplementedError
-
-    def _min(self, array: np.ndarray) -> bool | int | float | str | None:
-        raise NotImplementedError
-
-    def _max(self, array: np.ndarray) -> bool | int | float | str | None:
-        raise NotImplementedError
-
-    def _check_value_data(self, array: np.ndarray, dtype: str) -> None:
-        raise NotImplementedError
-
-    def _to_str_array(self, array: np.ndarray) -> np.ndarray:
-        raise NotImplementedError
-
-
-@dataclass(frozen=True, slots=True)
-class FieldType:
-    element_type: ElementType
-
-    def __post_init__(self) -> None:
-        assert_type(self.element_type, ElementType)
-
-    @property
-    def name(self) -> str:
-        raise NotImplementedError
-
-    def __str__(self) -> str:
-        return self.name
-
-    def _can_be_sorted(self) -> bool:
-        raise NotImplementedError
-
-    def _dtype(self, value: np.ndarray) -> str:
-        raise NotImplementedError
-
-    def _shape(self, value: np.ndarray) -> tuple:
-        raise NotImplementedError
-
-    def _non_null_count(self, value: np.ndarray) -> int:
-        raise NotImplementedError
-
-    def _mean(self, value: np.ndarray) -> float | None:
-        raise NotImplementedError
-
-    def _min(self, value: np.ndarray) -> bool | int | float | str | None:
-        raise NotImplementedError
-
-    def _max(self, value: np.ndarray) -> bool | int | float | str | None:
-        raise NotImplementedError
-
-    def _check_value_shape(self, value: np.ndarray) -> None:
-        raise NotImplementedError
-
-    def _check_value_dtype(self, value: np.ndarray) -> None:
-        raise NotImplementedError
-
-    def _validate(self, value: np.ndarray) -> None:
-        self._check_value_shape(value)
-        self._check_value_dtype(value)
-
-    def _downcast(self, value: np.ndarray) -> np.ndarray:
-        raise NotImplementedError
-
-    def _to_str_array(self, value: np.ndarray) -> np.ndarray:
-        raise NotImplementedError
+from ..utils.asserts import assert_never_type, assert_type, is_typed_dict, is_typed_list
+from ..utils.logger import logger
+from .field_types import (
+    _BASE_FIELD_CHECKER,
+    FieldType,
+    _convert_pa_type_to_ftype,
+    category,
+)
 
 
 @dataclass(eq=False, frozen=True, slots=True)
@@ -127,15 +48,6 @@ class Field(Sequence):
 
     def __str__(self) -> str:
         return f"{self.ftype}{list(self.shape())}"
-
-    def __eq__(self, other):
-        raise NotImplementedError
-
-    def __ne__(self, other):
-        raise NotImplementedError
-
-    def __hash__(self):
-        raise NotImplementedError
 
     def __copy__(self) -> "Field":
         return Field(copy.copy(self.ftype), copy.copy(self.value))
@@ -184,7 +96,7 @@ class Field(Sequence):
 
     # Field methods
 
-    def _can_be_sorted(self) -> bool:
+    def can_be_sorted(self) -> bool:
         return self.ftype._can_be_sorted()
 
     class Loc:
@@ -217,13 +129,13 @@ class Field(Sequence):
     def non_null_count(self) -> int:
         return self.ftype._non_null_count(self.value)
 
-    def mean(self) -> float | None:
+    def mean(self) -> Any:
         return self.ftype._mean(self.value)
 
-    def min(self) -> bool | int | float | str | None:
+    def min(self) -> Any:
         return self.ftype._min(self.value)
 
-    def max(self) -> bool | int | float | str | None:
+    def max(self) -> Any:
         return self.ftype._max(self.value)
 
     def validate(self) -> None:
@@ -232,10 +144,19 @@ class Field(Sequence):
     def downcast(self) -> "Field":
         return Field(self.ftype, self.ftype._downcast(self.value))
 
-    def _to_str_array(self) -> np.ndarray:
+    def to_str_array(self) -> np.ndarray:
         return self.ftype._to_str_array(self.value)
 
-    def _info(self) -> dict[str, Any]:
+    def to_pa_array(self) -> pa.Array:
+        return self.ftype._to_pa_array(self.value)
+
+    @classmethod
+    def from_pa_array(cls, pa_array: pa.Array) -> "Field":
+        ftype = _convert_pa_type_to_ftype(pa_array.type)
+        value = ftype._from_pa_array(pa_array)
+        return cls(ftype, value)
+
+    def get_info_dict(self) -> dict[str, Any]:
         ret = {
             "field type": str(self.ftype),
             "dtype": self.dtype(),
@@ -270,15 +191,6 @@ class Frame(Mapping[str, Field]):
             self.to_string()
             + f"\n[{self.num_elements} elements x {self.num_fields} fields]"
         )
-
-    def __eq__(self, other):
-        raise NotImplementedError
-
-    def __ne__(self, other):
-        raise NotImplementedError
-
-    def __hash__(self):
-        raise NotImplementedError
 
     def __copy__(self) -> "Frame":
         return Frame(copy.copy(self.fields))
@@ -322,108 +234,6 @@ class Frame(Mapping[str, Field]):
             return 0
         return len(next(iter(self.values())))
 
-    @property
-    def loc_elements(self) -> "ElementLoc":
-        return self.ElementLoc(self)
-
-    @property
-    def num_fields(self) -> int:
-        return len(self)
-
-    @property
-    def loc_fields(self) -> "FieldLoc":
-        return self.FieldLoc(self)
-
-    def describe(self, max_colwidth: int | None = 25) -> str:
-        fields_info = [{"name": name, **field._info()} for name, field in self.items()]
-        fields_dict = {
-            key: [field_info[key] for field_info in fields_info]
-            for key in fields_info[0].keys()
-        }
-        desc_df = pd.DataFrame(fields_dict, dtype=object)
-        return desc_df.to_string(index=False, max_colwidth=max_colwidth)
-
-    def validate(self) -> None:
-        for _, field in self.items():
-            if len(field) != self.num_elements:
-                raise ValueError
-            field.validate()
-
-    def downcast(self) -> "Frame":
-        return Frame({name: field.downcast() for name, field in self.items()})
-
-    def sort_values(
-        self,
-        by: str,
-        *,
-        ascending: bool = True,
-        kind: Literal["quicksort", "stable"] = "stable",
-    ) -> "Frame":
-        if not self[by]._can_be_sorted():
-            raise ValueError
-        indices = np.argsort(self[by].value, kind=kind)
-        if not ascending:
-            indices = indices[::-1]
-        return self.loc_elements[indices]
-
-    def groupby(self, by: str) -> Iterator[tuple[Any, "Frame"]]:
-        if not self[by]._can_be_sorted():
-            raise ValueError
-        unique_values, codes = np.unique(self[by].value, return_inverse=True)
-        for i in range(len(unique_values)):
-            yield unique_values[i], self.loc_elements[codes == i]
-
-    def to_csv(self, path: str | PathLike) -> None:
-        path = Path(path)
-        logger.info(f"Saving frame to {path.name} ...")
-        str_df = pd.DataFrame(
-            {name: field._to_str_array() for name, field in self.items()}
-        )
-        str_df.to_csv(path, sep=FIELD_SEP, index=False, header=True)
-
-    def to_pickle(self, path: str | PathLike) -> None:
-        path = Path(path)
-        logger.info(f"Saving frame to {path.name} ...")
-        with open(path, "wb") as file:
-            pickle.dump(self, file)
-
-    @classmethod
-    def from_pickle(cls, path: str | PathLike) -> "Frame":
-        path = Path(path)
-        logger.info(f"Loading frame from {path.name} ...")
-        with open(path, "rb") as file:
-            return pickle.load(file)
-
-    def to_string(
-        self, max_rows: int | None = 10, max_colwidth: int | None = 25
-    ) -> str:
-        if max_rows is None or max_rows >= self.num_elements:
-            str_df = pd.DataFrame()
-            str_df["INDEX"] = np.arange(self.num_elements)
-            for name, field in self.items():
-                str_df[name] = field._to_str_array()
-        else:
-            head = (max_rows + 1) // 2
-            tail = self.num_elements - (max_rows - head)
-            ellipsis = np.array(["..."], dtype=object)
-            str_df = pd.DataFrame()
-            str_df["INDEX"] = np.concatenate(
-                [
-                    np.arange(head).astype(object),
-                    ellipsis,
-                    np.arange(tail, self.num_elements).astype(object),
-                ]
-            )
-            for name, field in self.items():
-                str_df[name] = np.concatenate(
-                    [
-                        field.loc[:head]._to_str_array(),
-                        ellipsis,
-                        field.loc[tail:]._to_str_array(),
-                    ]
-                )
-        return str_df.to_string(index=False, max_colwidth=max_colwidth)
-
     class ElementLoc:
         def __init__(self, frame: "Frame") -> None:
             self.frame = frame
@@ -462,6 +272,14 @@ class Frame(Mapping[str, Field]):
                 )
             assert_never_type(index)
 
+    @property
+    def loc_elements(self) -> "ElementLoc":
+        return self.ElementLoc(self)
+
+    @property
+    def num_fields(self) -> int:
+        return len(self)
+
     class FieldLoc:
         def __init__(self, frame: "Frame") -> None:
             self.frame = frame
@@ -480,6 +298,122 @@ class Frame(Mapping[str, Field]):
             if is_typed_list(index, str):
                 return Frame({k: self.frame[k] for k in index})
             assert_never_type(index)
+
+    @property
+    def loc_fields(self) -> "FieldLoc":
+        return self.FieldLoc(self)
+
+    def describe(self, max_colwidth: int | None = 25) -> str:
+        fields_info = [
+            {"name": name, **field.get_info_dict()} for name, field in self.items()
+        ]
+        fields_dict = {
+            key: [field_info[key] for field_info in fields_info]
+            for key in fields_info[0].keys()
+        }
+        desc_df = pd.DataFrame(fields_dict, dtype=object)
+        return desc_df.to_string(index=False, max_colwidth=max_colwidth)
+
+    def validate(self) -> None:
+        for _, field in self.items():
+            if len(field) != self.num_elements:
+                raise ValueError
+            field.validate()
+
+    def downcast(self) -> "Frame":
+        return Frame({name: field.downcast() for name, field in self.items()})
+
+    def sort_values(
+        self,
+        by: str,
+        *,
+        ascending: bool = True,
+        kind: Literal["quicksort", "stable"] = "stable",
+    ) -> "Frame":
+        if not self[by].can_be_sorted():
+            raise ValueError
+        indices = np.argsort(self[by].value, kind=kind)
+        if not ascending:
+            indices = indices[::-1]
+        return self.loc_elements[indices]
+
+    def groupby(self, by: str) -> Iterator[tuple[Any, "Frame"]]:
+        if not self[by].can_be_sorted():
+            raise ValueError
+        unique_values, codes = np.unique(self[by].value, return_inverse=True)
+        for i in range(len(unique_values)):
+            yield unique_values[i], self.loc_elements[codes == i]
+
+    def to_csv(self, path: str | PathLike) -> None:
+        path = Path(path)
+        logger.info(f"Saving frame to {path.name} ...")
+        str_df = pd.DataFrame(
+            {name: field.to_str_array() for name, field in self.items()}
+        )
+        str_df.to_csv(path, sep=FIELD_SEP, index=False, header=True)
+
+    def to_pickle(self, path: str | PathLike) -> None:
+        path = Path(path)
+        logger.info(f"Saving frame to {path.name} ...")
+        with open(path, "wb") as file:
+            pickle.dump(self, file)
+
+    @classmethod
+    def from_pickle(cls, path: str | PathLike) -> "Frame":
+        path = Path(path)
+        logger.info(f"Loading frame from {path.name} ...")
+        with open(path, "rb") as file:
+            return pickle.load(file)
+
+    def to_feather(self, path: str | PathLike) -> None:
+        path = Path(path)
+        logger.info(f"Saving frame to {path.name} ...")
+        pa_array_dict: dict[str, pa.Array] = {
+            name: field.to_pa_array() for name, field in self.items()
+        }
+        pa_table: pa.Table = pa.table(pa_array_dict)
+        feather.write_feather(pa_table, path)
+
+    @classmethod
+    def from_feather(cls, path: str | PathLike) -> "Frame":
+        path = Path(path)
+        logger.info(f"Loading frame from {path.name} ...")
+        pa_table = feather.read_table(path)
+        fields: dict[str, Field] = {
+            name: Field.from_pa_array(pa_table.column(name))
+            for name in pa_table.column_names
+        }
+        return Frame(fields)
+
+    def to_string(
+        self, max_rows: int | None = 10, max_colwidth: int | None = 25
+    ) -> str:
+        if max_rows is None or max_rows >= self.num_elements:
+            str_df = pd.DataFrame()
+            str_df["INDEX"] = np.arange(self.num_elements)
+            for name, field in self.items():
+                str_df[name] = field.to_str_array()
+        else:
+            head = (max_rows + 1) // 2
+            tail = self.num_elements - (max_rows - head)
+            ellipsis = np.array(["..."], dtype=object)
+            str_df = pd.DataFrame()
+            str_df["INDEX"] = np.concatenate(
+                [
+                    np.arange(head).astype(object),
+                    ellipsis,
+                    np.arange(tail, self.num_elements).astype(object),
+                ]
+            )
+            for name, field in self.items():
+                str_df[name] = np.concatenate(
+                    [
+                        field.loc[:head].to_str_array(),
+                        ellipsis,
+                        field.loc[tail:].to_str_array(),
+                    ]
+                )
+        return str_df.to_string(index=False, max_colwidth=max_colwidth)
 
 
 @unique
@@ -572,15 +506,6 @@ class Data(Mapping[str, Frame]):
             for source, frame in self.frames.items()
         )
 
-    def __eq__(self, other):
-        raise NotImplementedError
-
-    def __ne__(self, other):
-        raise NotImplementedError
-
-    def __hash__(self):
-        raise NotImplementedError
-
     def __copy__(self) -> "Data":
         return Data(copy.copy(self.frames))
 
@@ -628,8 +553,8 @@ class Data(Mapping[str, Frame]):
         return TIMESTAMP in self[Source.INTERACTION]
 
     @property
-    def is_splitted(self) -> bool:
-        """Whether the data is splitted."""
+    def has_phase_mask(self) -> bool:
+        """Whether the data has phase mask."""
         return {TRAIN_MASK, VAL_MASK, TEST_MASK}.issubset(self[Source.INTERACTION])
 
     @property
@@ -638,23 +563,6 @@ class Data(Mapping[str, Frame]):
         interaction_frame = self[Source.INTERACTION]
         return {
             phase: interaction_frame[phase.mask_field].value.sum() for phase in Phase
-        }
-
-    @property
-    def phase_data(self) -> dict[Phase, "Data"]:
-        """The data for each phase."""
-        interaction_frame = self[Source.INTERACTION]
-        user_frame = self[Source.USER]
-        item_frame = self[Source.ITEM]
-        return {
-            phase: Data.from_frames(
-                interaction_frame.loc_elements[
-                    interaction_frame[phase.mask_field].value
-                ],
-                user_frame,
-                item_frame,
-            )
-            for phase in Phase
         }
 
     @property
@@ -687,7 +595,7 @@ class Data(Mapping[str, Frame]):
         }
         if self.has_timestamp:
             fields[Source.INTERACTION].append(TIMESTAMP)
-        if self.is_splitted:
+        if self.has_phase_mask:
             fields[Source.INTERACTION].extend([TRAIN_MASK, VAL_MASK, TEST_MASK])
         if self.has_eval_negative_samples:
             fields[Source.USER].extend([VAL_NEG_IIDS, TEST_NEG_IIDS])
@@ -709,40 +617,39 @@ class Data(Mapping[str, Frame]):
         return fields
 
     def validate(self) -> None:  # noqa: C901
-        """Validate the data.
-
-        :raises ValueError: If the data is invalid.
-        :return: The validated data itself.
-        """
+        field_names: set[str] = set()
         # validate the base fields
         for source, fields in self.base_fields.items():
             for field in fields:
                 if field not in self[source]:
-                    raise ValueError(f"Mising field {field} in {source} frame.")
+                    raise ValueError
+                if not _BASE_FIELD_CHECKER[field](self[source][field].ftype):
+                    raise ValueError
+                field_names.add(field)
 
         # validate the context fields
-        context_fields: set[str] = set()
         for source, fields in self.context_fields.items():
             for field in fields:
-                if field in context_fields:
-                    raise ValueError(f"Duplicate context field {field} in data.")
-                context_fields.add(field)
+                if field in field_names:
+                    raise ValueError
+                field_names.add(field)
 
         # validate the uids and iids
-        interaction_uids_set = set(self[Source.INTERACTION][UID].value)
-        interaction_iids_set = set(self[Source.INTERACTION][IID].value)
-        uids_set = set(self[Source.USER][UID].value)
-        iids_set = set(self[Source.ITEM][IID].value)
-        if interaction_uids_set > uids_set:
-            raise ValueError(
-                "The user IDs in the interaction frame are not a subset of the user IDs"
-                "in the user frame."
-            )
-        if interaction_iids_set > iids_set:
-            raise ValueError(
-                "The item IDs in the interaction frame are not a subset of the item IDs"
-                "in the item frame."
-            )
+        if not _has_continuous_ids(self[Source.USER][UID]):
+            raise ValueError
+        if not _has_continuous_ids(self[Source.ITEM][IID]):
+            raise ValueError
+        num_users = self[Source.USER].num_elements
+        num_items = self[Source.ITEM].num_elements
+        if self[Source.INTERACTION][UID].max() >= num_users:
+            raise ValueError
+        if self[Source.INTERACTION][IID].max() >= num_items:
+            raise ValueError
+        if self.has_eval_negative_samples:
+            if self[Source.USER][VAL_NEG_IIDS].max() >= num_items:
+                raise ValueError
+            if self[Source.USER][TEST_NEG_IIDS].max() >= num_items:
+                raise ValueError
 
         # validate the frames
         for _, frame in self.items():
@@ -752,13 +659,12 @@ class Data(Mapping[str, Frame]):
         return Data({source: frame.downcast() for source, frame in self.items()})
 
     def info(self) -> None:
-        """Print the information of the data."""
         print(self.__class__)
 
         print(f"# interactions: {self.num_elements[Source.INTERACTION]}")
         print(f"with timestamp: {self.has_timestamp}")
-        print(f"splitted: {self.is_splitted}")
-        if self.is_splitted:
+        print(f"with phase mask: {self.has_phase_mask}")
+        if self.has_phase_mask:
             for phase in Phase:
                 num = self.num_phase_interactions[phase]
                 print(f"  # {phase.value} interactions: {num}")
@@ -784,11 +690,14 @@ class Data(Mapping[str, Frame]):
         print(f"Context fields of items: {self.context_fields[Source.ITEM]}")
         print(self[Source.ITEM].describe())
 
-    def to_pickle(self, path: str | PathLike) -> None:
-        """Save the data to pickle files.
+    def to_csv(self, path: str | PathLike) -> None:
+        path = Path(path)
+        logger.info(f"Saving data to {path} ...")
+        path.mkdir(parents=True, exist_ok=True)
+        for source, frame in self.items():
+            frame.to_csv(path / _FRAMES_CSV[source])
 
-        :param path: The directory to save the data.
-        """
+    def to_pickle(self, path: str | PathLike) -> None:
         path = Path(path)
         logger.info(f"Saving data to {path} ...")
         path.mkdir(parents=True, exist_ok=True)
@@ -797,182 +706,50 @@ class Data(Mapping[str, Frame]):
 
     @classmethod
     def from_pickle(cls, path: str | PathLike) -> "Data":
-        """Load the data from pickle files.
-
-        :param path: The directory to load the data.
-        :return: The loaded data.
-        """
         path = Path(path)
         logger.info(f"Loading data from {path} ...")
-        return cls(
-            {
-                source: Frame.from_pickle(path / _FRAMES_PICKLE[source])
-                for source in Source
-            }
-        )
+        frames: dict[Source, Frame] = {
+            source: Frame.from_pickle(path / _FRAMES_PICKLE[source])
+            for source in Source
+        }
+        return cls(frames)
 
-    def to_csv(self, path: str | PathLike) -> None:
-        """Save the data to csv files.
-
-        :param path: The directory to save the data.
-        """
+    def to_feather(self, path: str | PathLike) -> None:
         path = Path(path)
         logger.info(f"Saving data to {path} ...")
         path.mkdir(parents=True, exist_ok=True)
         for source, frame in self.items():
-            frame.to_csv(path / _FRAMES_CSV[source])
-
-
-@dataclass(frozen=True, kw_only=True, slots=True)
-class DataInfo:
-    """Data information."""
-
-    description: str
-    """Description of the data."""
-    citation: str
-    """Citation of the data."""
-    homepage: str
-    """Homepage of the data."""
-    num_elements: dict[str, int]
-    """Number of elements of each source."""
-    base_fields: dict[str, dict[str, dict[str, Any]]]
-    """Base field information of each source."""
-    context_fields: dict[str, dict[str, dict[str, Any]]]
-    """Context field information of each source."""
-    files_size: dict[str, int]
-    """Size of the data file for each source."""
-    files_checksum: dict[str, str]
-    """Checksum of the data file for each source."""
-    compressed_files_size: dict[str, int]
-    """Size of the compressed data file for each source."""
-    compressed_files_checksum: dict[str, str]
-    """SHA256 Checksum of the compressed data file for each source."""
-
-    @property
-    def fields(self) -> dict[str, dict[str, dict[str, Any]]]:
-        """Field information for each source."""
-        fields = {}
-        for source in Source:
-            fields[source.value] = {
-                **self.base_fields[source.value],
-                **self.context_fields[source.value],
-            }
-        return fields
-
-    def info(self, max_colwidth: int | None = 25) -> None:
-        """Print the field information."""
-        fields = self.fields
-        for source, field_info in fields.items():
-            print(f"{source} fields:")
-            info = [{"name": name, **info} for name, info in field_info.items()]
-            info_dict = {
-                key: [field_info[key] for field_info in info] for key in info[0].keys()
-            }
-            info_frame = pd.DataFrame(info_dict, dtype=object)
-            print(info_frame.to_string(index=False, max_colwidth=max_colwidth))
+            frame.to_feather(path / _FRAMES_FEATHER[source])
 
     @classmethod
-    def from_data_files(
-        cls,
-        path: str | PathLike,
-        description: str = "",
-        citation: str = "",
-        homepage: str = "",
-    ) -> "DataInfo":
-        """Create the data information from the data files.
-
-        :param path: The directory to load the data.
-        :param description: The description of the data.
-        :param citation: The citation of the data.
-        :param homepage: The homepage of the data.
-        :return: The data information.
-        """
+    def from_feather(cls, path: str | PathLike) -> "Data":
         path = Path(path)
-        logger.info(f"Creating data information from {path} ...")
-        data = Data.from_pickle(path)
-
-        num_elements: dict[str, int] = {
-            source.value: num for source, num in data.num_elements.items()
+        logger.info(f"Loading data from {path} ...")
+        frames: dict[Source, Frame] = {
+            source: Frame.from_feather(path / _FRAMES_FEATHER[source])
+            for source in Source
         }
-
-        base_fields: dict[str, dict[str, dict[str, Any]]] = {}
-        for source, fields in data.base_fields.items():
-            frame = data[source]
-            base_fields[source.value] = {name: frame[name]._info() for name in fields}
-
-        context_fields: dict[str, dict[str, dict[str, Any]]] = {}
-        for source, fields in data.context_fields.items():
-            frame = data[source]
-            context_fields[source.value] = {
-                name: frame[name]._info() for name in fields
-            }
-
-        files_size: dict[str, int] = {}
-        files_checksum: dict[str, str] = {}
-        for source, filename in _FRAMES_PICKLE.items():
-            file_path = path / filename
-            files_size[source.value] = file_path.stat().st_size
-            files_checksum[source.value] = checksum(file_path)
-
-        compressed_files_size: dict[str, int] = {}
-        compressed_files_checksum: dict[str, str] = {}
-        for source, filename in _FRAMES_PICKLE_XZ.items():
-            compressed_file_path = path / filename
-            file_path = path / _FRAMES_PICKLE[source]
-            compress(file_path, compressed_file_path)
-            compressed_files_size[source.value] = compressed_file_path.stat().st_size
-            compressed_files_checksum[source.value] = checksum(compressed_file_path)
-
-        return cls(
-            description=description,
-            citation=citation,
-            homepage=homepage,
-            num_elements=num_elements,
-            base_fields=base_fields,
-            context_fields=context_fields,
-            files_size=files_size,
-            files_checksum=files_checksum,
-            compressed_files_size=compressed_files_size,
-            compressed_files_checksum=compressed_files_checksum,
-        )
-
-    def to_json(self, path: str | PathLike, pretty_print=False):
-        """Write the data info to a json file.
-
-        :param path: The directory to save the data info.
-        :param pretty_print: Whether to pretty print the json file.
-        """
-        path = Path(path)
-        logger.info(f"Saving data info to {path} ...")
-        with open(path / _DATA_INFO_JSON, "w", encoding="utf-8") as f:
-            json.dump(asdict(self), f, indent=4 if pretty_print else None)
-
-    @classmethod
-    def from_json(cls, path: str | PathLike) -> "DataInfo":
-        """Create a data info from a json file.
-
-        :param path: The directory to load the data info.
-        :return: The data info.
-        """
-        path = Path(path)
-        logger.info(f"Loading data info from {path} ...")
-        with open(path / _DATA_INFO_JSON, "r", encoding="utf-8") as f:
-            return cls(**json.load(f))
+        return cls(frames)
 
 
-_FRAMES_PICKLE = {
-    Source.INTERACTION: "interaction_frame.pickle",
-    Source.USER: "user_frame.pickle",
-    Source.ITEM: "item_frame.pickle",
-}
 _FRAMES_CSV = {
     Source.INTERACTION: "interaction_frame.csv",
     Source.USER: "user_frame.csv",
     Source.ITEM: "item_frame.csv",
 }
-_FRAMES_PICKLE_XZ = {
-    Source.INTERACTION: "interaction_frame.pickle.xz",
-    Source.USER: "user_frame.pickle.xz",
-    Source.ITEM: "item_frame.pickle.xz",
+_FRAMES_PICKLE = {
+    Source.INTERACTION: "interaction_frame.pickle",
+    Source.USER: "user_frame.pickle",
+    Source.ITEM: "item_frame.pickle",
 }
-_DATA_INFO_JSON = "data_info.json"
+_FRAMES_FEATHER = {
+    Source.INTERACTION: "interaction_frame.feather",
+    Source.USER: "user_frame.feather",
+    Source.ITEM: "item_frame.feather",
+}
+
+
+def _has_continuous_ids(field: Field) -> bool:
+    if field.ftype != category():
+        raise ValueError
+    return (field.value == np.arange(len(field))).all()

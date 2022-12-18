@@ -5,9 +5,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from happyrec.constants import IID, LABEL, TIMESTAMP, UID
 from happyrec.data import DataInfo, Frame
 from happyrec.data import field_types as ftp
-from happyrec.data.fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.logger import logger
 from happyrec.utils.preprocessing import convert_dataframe_to_frame, create_data
 
@@ -88,7 +88,7 @@ def create_item_frame(item_file: Path, links_file: Path) -> Frame:
     return convert_dataframe_to_frame(
         {
             IID: ftp.category(),
-            "title": ftp.string(),
+            "title": ftp.text(),
             "genres": ftp.list_(ftp.category()),
             "movielens_id": ftp.category(),
             "imdb_id": ftp.category(),
@@ -104,11 +104,11 @@ def preprocess() -> None:
         RAW_MOVIELENS_25M_DIR / "movies.csv", RAW_MOVIELENS_25M_DIR / "links.csv"
     )
 
-    data = create_data(interaction_frame, None, item_frame)
+    data, category_info = create_data(interaction_frame, None, item_frame)
 
     print(data)
     data.info()
-    data.to_pickle(MOVIELENS_25M_DIR)
+    data.to_feather(MOVIELENS_25M_DIR)
 
     data_info = DataInfo.from_data_files(
         MOVIELENS_25M_DIR,
@@ -117,6 +117,8 @@ def preprocess() -> None:
         homepage=MOVIELENS_25M_HOMEPAGE,
     )
     data_info.to_json(MOVIELENS_25M_DIR)
+
+    category_info.to_json(MOVIELENS_25M_DIR)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,5 @@
 import hashlib
 import lzma
-import multiprocessing
-import subprocess
 from os import PathLike
 from pathlib import Path
 
@@ -9,20 +7,6 @@ import requests
 from rich.progress import Progress
 
 from .logger import logger
-
-
-def compress(src: str | PathLike, dst: str | PathLike) -> None:
-    """Compress a file to a .xz file.
-
-    :param src: The path of the file to be compressed.
-    :param dst: The path of the compressed file.
-    """
-    src = Path(src)
-    dst = Path(dst)
-    logger.info(f"Compressing {src.name} to {dst.name} ...")
-    cores = multiprocessing.cpu_count() // 2
-    cmd = f"xz -zcf6v -T{cores} {src} > {dst}"
-    subprocess.run(cmd, shell=True)
 
 
 def decompress(src: str | PathLike, dst: str | PathLike) -> None:

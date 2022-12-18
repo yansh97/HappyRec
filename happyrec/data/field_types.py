@@ -1,316 +1,92 @@
+import operator
 from dataclasses import dataclass
+from typing import Any, Callable, cast
 
 import numpy as np
+import pyarrow as pa
 
-from ..constants import SEQ_SEP
+from ..constants import (
+    IID,
+    LABEL,
+    SEQ_SEP,
+    TEST_MASK,
+    TEST_NEG_IIDS,
+    TIMESTAMP,
+    TRAIN_MASK,
+    UID,
+    VAL_MASK,
+    VAL_NEG_IIDS,
+)
 from ..utils.asserts import assert_type
-from .core import ElementType, FieldType
-
-
-def _assert_1d_array(array: np.ndarray) -> None:
-    if array.ndim != 1:
-        raise ValueError
-
-
-def _get_smallest_int_dtype(min_value: int, max_value: int) -> str:
-    for dtype in ("int8", "int16", "int32", "int64"):
-        if np.iinfo(dtype).min <= min_value and np.iinfo(dtype).max >= max_value:
-            return dtype
-    raise ValueError
+from .element_types import BoolEtype, CategoryEtype, ElementType, FloatEtype, IntEtype
 
 
 @dataclass(frozen=True, slots=True)
-class BoolEtype(ElementType):
+class FieldType:
+    @property
+    def name(self) -> str:
+        raise NotImplementedError
+
     def __str__(self) -> str:
-        return "bool"
-
-    def _can_be_nested(self) -> bool:
-        return True
-
-    def _can_hold_null(self) -> bool:
-        return False
+        return self.name
 
     def _can_be_sorted(self) -> bool:
-        return True
+        raise NotImplementedError
 
-    def _non_null_count(self, array: np.ndarray) -> int:
-        _assert_1d_array(array)
-        return len(array)
+    def _dtype(self, value: np.ndarray) -> str:
+        raise NotImplementedError
 
-    def _mean(self, array: np.ndarray) -> float:
-        _assert_1d_array(array)
-        return float(array.mean())
+    def _shape(self, value: np.ndarray) -> tuple:
+        raise NotImplementedError
 
-    def _min(self, array: np.ndarray) -> bool:
-        _assert_1d_array(array)
-        return bool(array.min())
+    def _non_null_count(self, value: np.ndarray) -> int:
+        raise NotImplementedError
 
-    def _max(self, array: np.ndarray) -> bool:
-        _assert_1d_array(array)
-        return bool(array.max())
+    def _mean(self, value: np.ndarray) -> Any:
+        raise NotImplementedError
 
-    def _check_value_data(self, array: np.ndarray, dtype: str) -> None:
-        _assert_1d_array(array)
-        if dtype != "bool":
-            raise ValueError
+    def _min(self, value: np.ndarray) -> Any:
+        raise NotImplementedError
 
-    def _to_str_array(self, array: np.ndarray) -> np.ndarray:
-        _assert_1d_array(array)
-        return array.astype(np.int8).astype(str).astype(object)
+    def _max(self, value: np.ndarray) -> Any:
+        raise NotImplementedError
 
+    def _check_value_shape(self, value: np.ndarray) -> None:
+        raise NotImplementedError
 
-@dataclass(frozen=True, slots=True)
-class IntEtype(ElementType):
-    def __str__(self) -> str:
-        return "int"
+    def _check_value_data(self, value: np.ndarray) -> None:
+        raise NotImplementedError
 
-    def _can_be_nested(self) -> bool:
-        return True
+    def _validate(self, value: np.ndarray) -> None:
+        self._check_value_shape(value)
+        self._check_value_data(value)
 
-    def _can_hold_null(self) -> bool:
-        return False
+    def _downcast(self, value: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
 
-    def _can_be_sorted(self) -> bool:
-        return True
+    def _to_str_array(self, value: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
 
-    def _non_null_count(self, array: np.ndarray) -> int:
-        _assert_1d_array(array)
-        return len(array)
+    def _to_pa_array(self, value: np.ndarray) -> pa.Array:
+        raise NotImplementedError
 
-    def _mean(self, array: np.ndarray) -> float:
-        _assert_1d_array(array)
-        return float(array.mean())
-
-    def _min(self, array: np.ndarray) -> int:
-        _assert_1d_array(array)
-        return int(array.min())
-
-    def _max(self, array: np.ndarray) -> int:
-        _assert_1d_array(array)
-        return int(array.max())
-
-    def _check_value_data(self, array: np.ndarray, dtype: str) -> None:
-        _assert_1d_array(array)
-        if dtype not in ("int8", "int16", "int32", "int64"):
-            raise ValueError
-
-    def _to_str_array(self, array: np.ndarray) -> np.ndarray:
-        _assert_1d_array(array)
-        return array.astype(str).astype(object)
-
-
-@dataclass(frozen=True, slots=True)
-class FloatEtype(ElementType):
-    def __str__(self) -> str:
-        return "float"
-
-    def _can_be_nested(self) -> bool:
-        return True
-
-    def _can_hold_null(self) -> bool:
-        return False
-
-    def _can_be_sorted(self) -> bool:
-        return True
-
-    def _non_null_count(self, array: np.ndarray) -> int:
-        _assert_1d_array(array)
-        return len(array)
-
-    def _mean(self, array: np.ndarray) -> float:
-        _assert_1d_array(array)
-        return float(array.mean())
-
-    def _min(self, array: np.ndarray) -> float:
-        _assert_1d_array(array)
-        return float(array.min())
-
-    def _max(self, array: np.ndarray) -> float:
-        _assert_1d_array(array)
-        return float(array.max())
-
-    def _check_value_data(self, array: np.ndarray, dtype: str) -> None:
-        _assert_1d_array(array)
-        if dtype not in ("float16", "float32", "float64"):
-            raise ValueError
-        if np.isnan(array).any():
-            raise ValueError
-
-    def _to_str_array(self, array: np.ndarray) -> np.ndarray:
-        _assert_1d_array(array)
-        return array.astype(str).astype(object)
-
-
-@dataclass(frozen=True, slots=True)
-class CategoryEtype(ElementType):
-    def __str__(self) -> str:
-        return "category"
-
-    def _can_be_nested(self) -> bool:
-        return True
-
-    def _can_hold_null(self) -> bool:
-        return False
-
-    def _can_be_sorted(self) -> bool:
-        return True
-
-    def _non_null_count(self, array: np.ndarray) -> int:
-        _assert_1d_array(array)
-        return len(array)
-
-    def _mean(self, array: np.ndarray) -> None:
-        _assert_1d_array(array)
-        return None
-
-    def _min(self, array: np.ndarray) -> bool | int | float | str | None:
-        _assert_1d_array(array)
-        ret = array.min()
-        if isinstance(ret, np.generic):
-            ret = ret.item()
-        return ret
-
-    def _max(self, array: np.ndarray) -> bool | int | float | str | None:
-        _assert_1d_array(array)
-        ret = array.max()
-        if isinstance(ret, np.generic):
-            ret = ret.item()
-        return ret
-
-    def _check_value_data(self, array: np.ndarray, dtype: str) -> None:
-        _assert_1d_array(array)
-        if dtype not in (
-            "int8",
-            "int16",
-            "int32",
-            "int64",
-            "float16",
-            "float32",
-            "float64",
-            "object",
-        ):
-            raise ValueError
-        if dtype in ("float16", "float32", "float64") and np.isnan(array).any():
-            raise ValueError
-        if dtype == "object" and not np.vectorize(isinstance)(array, str).all():
-            raise ValueError
-
-    def _to_str_array(self, array: np.ndarray) -> np.ndarray:
-        _assert_1d_array(array)
-        if array.dtype == "object":
-            return np.vectorize(repr)(array).astype(object)
-        return array.astype(str).astype(object)
-
-
-@dataclass(frozen=True, slots=True)
-class StringEtype(ElementType):
-    def __str__(self) -> str:
-        return "string"
-
-    def _can_be_nested(self) -> bool:
-        return False
-
-    def _can_hold_null(self) -> bool:
-        return True
-
-    def _can_be_sorted(self) -> bool:
-        return False
-
-    def _non_null_count(self, array: np.ndarray) -> int:
-        _assert_1d_array(array)
-        return len(array) - int(np.vectorize(isinstance)(array, type(None)).sum())
-
-    def _mean(self, array: np.ndarray) -> None:
-        _assert_1d_array(array)
-        return None
-
-    def _min(self, array: np.ndarray) -> None:
-        _assert_1d_array(array)
-        return None
-
-    def _max(self, array: np.ndarray) -> None:
-        _assert_1d_array(array)
-        return None
-
-    def _check_value_data(self, array: np.ndarray, dtype: str) -> None:
-        _assert_1d_array(array)
-        if dtype != "object":
-            raise ValueError
-        if not np.vectorize(isinstance)(array, str | type(None)).all():
-            raise ValueError
-
-    def _to_str_array(self, array: np.ndarray) -> np.ndarray:
-        _assert_1d_array(array)
-        str_array = array.copy()
-        mask = np.vectorize(isinstance)(array, type(None))
-        str_array[mask] = ""
-        return str_array
-
-
-@dataclass(frozen=True, slots=True)
-class ImageEtype(ElementType):
-    def __str__(self) -> str:
-        return "image"
-
-    def _can_be_nested(self) -> bool:
-        return False
-
-    def _can_hold_null(self) -> bool:
-        return True
-
-    def _can_be_sorted(self) -> bool:
-        return False
-
-    def _non_null_count(self, array: np.ndarray) -> int:
-        _assert_1d_array(array)
-        return len(array) - int(np.vectorize(isinstance)(array, type(None)).sum())
-
-    def _mean(self, array: np.ndarray) -> None:
-        _assert_1d_array(array)
-        return None
-
-    def _min(self, array: np.ndarray) -> None:
-        _assert_1d_array(array)
-        return None
-
-    def _max(self, array: np.ndarray) -> None:
-        _assert_1d_array(array)
-        return None
-
-    def _check_value_data(self, array: np.ndarray, dtype: str) -> None:
-        _assert_1d_array(array)
-        if dtype != "object":
-            raise ValueError
-
-        def _valid_image(image: np.ndarray | None) -> bool:
-            if image is None:
-                return True
-            return (
-                isinstance(image, np.ndarray)
-                and image.ndim == 1
-                and image.size > 0
-                and image.dtype == "uint8"
-            )
-
-        if not np.vectorize(_valid_image)(array).all():
-            raise ValueError
-
-    def _to_str_array(self, array: np.ndarray) -> np.ndarray:
-        _assert_1d_array(array)
-        str_array = np.full(len(array), "<image>", dtype=object)
-        mask = np.vectorize(isinstance)(array, type(None))
-        str_array[mask] = ""
-        return str_array
+    def _from_pa_array(self, pa_array: pa.Array) -> np.ndarray:
+        raise NotImplementedError
 
 
 @dataclass(frozen=True, slots=True)
 class ScalarFtype(FieldType):
+    element_type: ElementType
+
+    def __post_init__(self) -> None:
+        assert_type(self.element_type, ElementType)
+
     @property
     def name(self) -> str:
         return f"scalar<{self.element_type}>"
 
     def _can_be_sorted(self) -> bool:
-        return self.element_type._can_be_sorted()
+        return True
 
     def _dtype(self, value: np.ndarray) -> str:
         return str(value.dtype)
@@ -319,18 +95,16 @@ class ScalarFtype(FieldType):
         return value.shape
 
     def _non_null_count(self, value: np.ndarray) -> int:
-        if self.element_type._can_hold_null():
-            return self.element_type._non_null_count(value)
         return len(value)
 
-    def _mean(self, value: np.ndarray) -> float | None:
-        return self.element_type._mean(value)
+    def _mean(self, value: np.ndarray) -> Any:
+        return value.mean().item()
 
-    def _min(self, value: np.ndarray) -> bool | int | float | str | None:
-        return self.element_type._min(value)
+    def _min(self, value: np.ndarray) -> Any:
+        return value.min().item()
 
-    def _max(self, value: np.ndarray) -> bool | int | float | str | None:
-        return self.element_type._max(value)
+    def _max(self, value: np.ndarray) -> Any:
+        return value.max().item()
 
     def _check_value_shape(self, value: np.ndarray) -> None:
         if len(value) == 0:
@@ -338,31 +112,37 @@ class ScalarFtype(FieldType):
         if value.ndim != 1:
             raise ValueError
 
-    def _check_value_dtype(self, value: np.ndarray) -> None:
+    def _check_value_data(self, value: np.ndarray) -> None:
         dtype = self._dtype(value)
-        self.element_type._check_value_data(value, dtype)
+        if dtype not in self.element_type._valid_dtypes():
+            raise ValueError
+        if _has_nan_value(value):
+            raise ValueError
 
     def _downcast(self, value: np.ndarray) -> np.ndarray:
-        dtype = self._dtype(value)
-        if dtype not in ("int8", "int16", "int32", "int64"):
-            return value.copy()
-        min_value: int = self._min(value)  # type: ignore
-        max_value: int = self._max(value)  # type: ignore
-        smallest_dtype = _get_smallest_int_dtype(min_value, max_value)
-        return value.astype(smallest_dtype)
+        dtype = _get_downcast_dtype(self, value)
+        if dtype is None:
+            return value
+        return value.astype(dtype)
 
     def _to_str_array(self, value: np.ndarray) -> np.ndarray:
-        return self.element_type._to_str_array(value)
+        return value.astype(str).astype(object)
+
+    def _to_pa_array(self, value: np.ndarray) -> pa.Array:
+        pa_type = self.element_type._convert_dtype_to_pa_type(self._dtype(value))
+        return pa.array(value, type=pa_type)
+
+    def _from_pa_array(self, pa_array: pa.Array) -> np.ndarray:
+        return pa_array.to_numpy()
 
 
 @dataclass(frozen=True, slots=True)
 class FixedSizeListFtype(FieldType):
+    element_type: ElementType
     length: int
 
     def __post_init__(self) -> None:
-        FieldType.__post_init__(self)
-        if not self.element_type._can_be_nested():
-            raise ValueError
+        assert_type(self.element_type, ElementType)
         assert_type(self.length, int)
         if self.length <= 0:
             raise ValueError
@@ -381,18 +161,16 @@ class FixedSizeListFtype(FieldType):
         return value.shape
 
     def _non_null_count(self, value: np.ndarray) -> int:
-        if self.element_type._can_hold_null():
-            raise ValueError
         return len(value)
 
-    def _mean(self, value: np.ndarray) -> float | None:
+    def _mean(self, value: np.ndarray) -> Any:
         return None
 
-    def _min(self, value: np.ndarray) -> bool | int | float | str | None:
-        return self.element_type._min(value.reshape(-1))
+    def _min(self, value: np.ndarray) -> Any:
+        return value.reshape(-1).min().item()
 
-    def _max(self, value: np.ndarray) -> bool | int | float | str | None:
-        return self.element_type._max(value.reshape(-1))
+    def _max(self, value: np.ndarray) -> Any:
+        return value.reshape(-1).max().item()
 
     def _check_value_shape(self, value: np.ndarray) -> None:
         if len(value) == 0:
@@ -402,32 +180,41 @@ class FixedSizeListFtype(FieldType):
         if value.shape[1] != self.length:
             raise ValueError
 
-    def _check_value_dtype(self, value: np.ndarray) -> None:
+    def _check_value_data(self, value: np.ndarray) -> None:
         dtype = self._dtype(value)
-        self.element_type._check_value_data(value.reshape(-1), dtype)
+        if dtype not in self.element_type._valid_dtypes():
+            raise ValueError
+        if _has_nan_value(value):
+            raise ValueError
 
     def _downcast(self, value: np.ndarray) -> np.ndarray:
-        dtype = self._dtype(value)
-        if dtype not in ("int8", "int16", "int32", "int64"):
-            return value.copy()
-        min_value: int = self._min(value)  # type: ignore
-        max_value: int = self._max(value)  # type: ignore
-        smallest_dtype = _get_smallest_int_dtype(min_value, max_value)
-        return value.astype(smallest_dtype)
+        dtype = _get_downcast_dtype(self, value)
+        if dtype is None:
+            return value
+        return value.astype(dtype)
 
     def _to_str_array(self, value: np.ndarray) -> np.ndarray:
         def _to_str(x: np.ndarray) -> str:
-            return SEQ_SEP.join(self.element_type._to_str_array(x))
+            return SEQ_SEP.join(x.astype(str).astype(object))
 
         return np.fromiter(map(_to_str, value), dtype=object, count=len(value))
+
+    def _to_pa_array(self, value: np.ndarray) -> pa.Array:
+        pa_etype = self.element_type._convert_dtype_to_pa_type(self._dtype(value))
+        pa_type = pa.list_(pa_etype, self.length)
+        return pa.FixedSizeListArray.from_arrays(value, type=pa_type)
+
+    def _from_pa_array(self, pa_array: pa.Array) -> np.ndarray:
+        array = pa_array.flatten().to_numpy()
+        return array.reshape(-1, self.length)
 
 
 @dataclass(frozen=True, slots=True)
 class ListFtype(FieldType):
+    element_type: ElementType
+
     def __post_init__(self) -> None:
-        FieldType.__post_init__(self)
-        if not self.element_type._can_be_nested():
-            raise ValueError
+        assert_type(self.element_type, ElementType)
 
     @property
     def name(self) -> str:
@@ -437,8 +224,8 @@ class ListFtype(FieldType):
         return False
 
     def _dtype(self, value: np.ndarray) -> str:
-        dtypes = np.vectorize(lambda x: x.dtype)(value)
-        if not all(dtypes == dtypes[0]):
+        dtypes: np.ndarray = np.vectorize(operator.attrgetter("dtype"))(value)
+        if not (dtypes == dtypes[0]).all():
             raise ValueError
         return str(dtypes[0])
 
@@ -449,26 +236,20 @@ class ListFtype(FieldType):
         return (len(value), (min_len, max_len))
 
     def _non_null_count(self, value: np.ndarray) -> int:
-        if self.element_type._can_hold_null():
-            raise ValueError
         return len(value)
 
-    def _mean(self, value: np.ndarray) -> float | None:
+    def _mean(self, value: np.ndarray) -> Any:
         return None
 
-    def _min(self, value: np.ndarray) -> bool | int | float | str | None:
-        dtype = self._dtype(value)
-        mask = np.vectorize(lambda x: len(x) > 0)(value)
-        value = value[mask]
-        min_values = np.vectorize(self.element_type._min)(value).astype(dtype)
-        return self.element_type._min(min_values)
+    def _min(self, value: np.ndarray) -> Any:
+        mask: np.ndarray = np.vectorize(len)(value) > 0
+        min_values = np.vectorize(operator.methodcaller("min"))(value)
+        return min_values[mask].min().item()
 
-    def _max(self, value: np.ndarray) -> bool | int | float | str | None:
-        dtype = self._dtype(value)
-        mask = np.vectorize(lambda x: len(x) > 0)(value)
-        value = value[mask]
-        max_values = np.vectorize(self.element_type._max)(value).astype(dtype)
-        return self.element_type._max(max_values)
+    def _max(self, value: np.ndarray) -> Any:
+        mask: np.ndarray = np.vectorize(len)(value) > 0
+        max_values = np.vectorize(operator.methodcaller("max"))(value)
+        return max_values[mask].max().item()
 
     def _check_value_shape(self, value: np.ndarray) -> None:
         if len(value) == 0:
@@ -476,38 +257,155 @@ class ListFtype(FieldType):
         if value.ndim != 1:
             raise ValueError
 
-    def _check_value_dtype(self, value: np.ndarray) -> None:
+    def _check_value_data(self, value: np.ndarray) -> None:
         if value.dtype != object:
             raise ValueError
 
-        def _valid_item(item: np.ndarray) -> bool:
-            return isinstance(item, np.ndarray) and item.ndim == 1
-
-        if not np.vectorize(_valid_item)(value).all():
+        if not np.vectorize(isinstance)(value, np.ndarray).all():
+            raise ValueError
+        if (np.vectorize(operator.attrgetter("ndim"))(value) != 1).any():
             raise ValueError
 
         dtype = self._dtype(value)
-        for item in value:
-            self.element_type._check_value_data(item, dtype)
+        if dtype not in self.element_type._valid_dtypes():
+            raise ValueError
+        if np.vectorize(_has_nan_value)(value).any():
+            raise ValueError
 
     def _downcast(self, value: np.ndarray) -> np.ndarray:
-        dtype = self._dtype(value)
-        if dtype not in ("int8", "int16", "int32", "int64"):
-            return value.copy()
-        min_value: int = self._min(value)  # type: ignore
-        max_value: int = self._max(value)  # type: ignore
-        smallest_dtype = _get_smallest_int_dtype(min_value, max_value)
+        dtype = _get_downcast_dtype(self, value)
+        if dtype is None:
+            return value
         return np.fromiter(
-            map(lambda x: x.astype(smallest_dtype), value),
+            map(operator.methodcaller("astype", dtype), value),
             dtype=object,
             count=len(value),
         )
 
     def _to_str_array(self, value: np.ndarray) -> np.ndarray:
         def _to_str(x: np.ndarray) -> str:
-            return SEQ_SEP.join(self.element_type._to_str_array(x))
+            return SEQ_SEP.join(x.astype(str).astype(object))
 
         return np.fromiter(map(_to_str, value), dtype=object, count=len(value))
+
+    def _to_pa_array(self, value: np.ndarray) -> pa.Array:
+        pa_etype = self.element_type._convert_dtype_to_pa_type(self._dtype(value))
+        pa_type = pa.list_(pa_etype)
+        values = np.concatenate(value)
+        offsets = np.concatenate([np.array([0]), np.vectorize(len)(value).cumsum()])
+        return pa.ListArray.from_arrays(offsets, values, type=pa_type)
+
+    def _from_pa_array(self, pa_array: pa.Array) -> np.ndarray:
+        return pa_array.to_numpy()
+
+
+@dataclass(frozen=True, slots=True)
+class TextFtype(FieldType):
+    @property
+    def name(self) -> str:
+        return "text"
+
+    def _can_be_sorted(self) -> bool:
+        return False
+
+    def _dtype(self, value: np.ndarray) -> str:
+        return str(value.dtype)
+
+    def _shape(self, value: np.ndarray) -> tuple:
+        return value.shape
+
+    def _non_null_count(self, value: np.ndarray) -> int:
+        return (value != "").sum().item()
+
+    def _mean(self, value: np.ndarray) -> Any:
+        return None
+
+    def _min(self, value: np.ndarray) -> Any:
+        return None
+
+    def _max(self, value: np.ndarray) -> Any:
+        return None
+
+    def _check_value_shape(self, value: np.ndarray) -> None:
+        if len(value) == 0:
+            raise ValueError
+        if value.ndim != 1:
+            raise ValueError
+
+    def _check_value_data(self, value: np.ndarray) -> None:
+        dtype = self._dtype(value)
+        if dtype not in ("object",):
+            raise ValueError
+        if not np.vectorize(isinstance)(value, str).all():
+            raise ValueError
+
+    def _downcast(self, value: np.ndarray) -> np.ndarray:
+        return value
+
+    def _to_str_array(self, value: np.ndarray) -> np.ndarray:
+        return value
+
+    def _to_pa_array(self, value: np.ndarray) -> pa.Array:
+        return pa.array(value, type=pa.string())
+
+    def _from_pa_array(self, pa_array: pa.Array) -> np.ndarray:
+        return pa_array.to_numpy()
+
+
+@dataclass(frozen=True, slots=True)
+class ImageFtype(FieldType):
+    @property
+    def name(self) -> str:
+        return "image"
+
+    def _can_be_sorted(self) -> bool:
+        return False
+
+    def _dtype(self, value: np.ndarray) -> str:
+        return str(value.dtype)
+
+    def _shape(self, value: np.ndarray) -> tuple:
+        return value.shape
+
+    def _non_null_count(self, value: np.ndarray) -> int:
+        return (value != b"").sum().item()
+
+    def _mean(self, value: np.ndarray) -> Any:
+        return None
+
+    def _min(self, value: np.ndarray) -> Any:
+        return None
+
+    def _max(self, value: np.ndarray) -> Any:
+        return None
+
+    def _check_value_shape(self, value: np.ndarray) -> None:
+        if len(value) == 0:
+            raise ValueError
+        if value.ndim != 1:
+            raise ValueError
+
+    def _check_value_data(self, value: np.ndarray) -> None:
+        dtype = self._dtype(value)
+        if dtype not in ("object",):
+            raise ValueError
+        if not np.vectorize(isinstance)(value, bytes).all():
+            raise ValueError
+
+    def _downcast(self, value: np.ndarray) -> np.ndarray:
+        return value
+
+    def _to_str_array(self, value: np.ndarray) -> np.ndarray:
+        image_sizes = np.vectorize(len)(value).astype(str).astype(object)
+        ret = "image(" + np.vectorize(len)(value).astype(str).astype(object) + "B)"
+        ret[image_sizes == "0"] = ""
+        return ret
+
+    def _to_pa_array(self, value: np.ndarray) -> pa.Array:
+        return pa.array(value, type=pa.binary())
+
+    def _from_pa_array(self, pa_array: pa.Array) -> np.ndarray:
+        return pa_array.to_numpy()
 
 
 def bool_() -> FieldType:
@@ -526,16 +424,79 @@ def category() -> FieldType:
     return ScalarFtype(CategoryEtype())
 
 
-def string() -> FieldType:
-    return ScalarFtype(StringEtype())
-
-
-def image() -> FieldType:
-    return ScalarFtype(ImageEtype())
-
-
 def list_(type_: FieldType, length: int | None = None) -> FieldType:
     assert_type(type_, ScalarFtype)
+    type_ = cast(ScalarFtype, type_)
     if length is None:
         return ListFtype(type_.element_type)
     return FixedSizeListFtype(type_.element_type, length)
+
+
+def text() -> FieldType:
+    return TextFtype()
+
+
+def image() -> FieldType:
+    return ImageFtype()
+
+
+def _has_nan_value(array: np.ndarray) -> bool:
+    return bool(np.isnan(array.reshape(-1)).any())
+
+
+def _get_downcast_dtype(ftype: FieldType, value: np.ndarray) -> str | None:
+    INT_DTYPES = ("int8", "int16", "int32", "int64")
+    UINT_DTYPES = ("uint8", "uint16", "uint32", "uint64")
+
+    value_dtype = ftype._dtype(value)
+    if value_dtype in INT_DTYPES:
+        DTYPES = INT_DTYPES
+    elif value_dtype in UINT_DTYPES:
+        DTYPES = UINT_DTYPES
+    else:
+        return None
+
+    min_value = ftype._min(value)
+    max_value = ftype._max(value)
+    for dtype in DTYPES:
+        if np.iinfo(dtype).min <= min_value and np.iinfo(dtype).max >= max_value:
+            return dtype
+    raise ValueError
+
+
+def _convert_pa_type_to_ftype(pa_type: pa.DataType) -> FieldType:
+    if pa.types.is_boolean(pa_type):
+        return bool_()
+    if pa.types.is_signed_integer(pa_type):
+        return int_()
+    if pa.types.is_floating(pa_type):
+        return float_()
+    if pa.types.is_unsigned_integer(pa_type):
+        return category()
+    if pa.types.is_fixed_size_list(pa_type):
+        pa_etype = pa_type.value_type
+        length = pa_type.list_size
+        return list_(_convert_pa_type_to_ftype(pa_etype), length)
+    if pa.types.is_list(pa_type):
+        pa_etype = pa_type.value_type
+        return list_(_convert_pa_type_to_ftype(pa_etype))
+    if pa.types.is_string(pa_type):
+        return text()
+    if pa.types.is_binary(pa_type):
+        return image()
+    raise ValueError
+
+
+_BASE_FIELD_CHECKER: dict[str, Callable[[FieldType], bool]] = {
+    UID: lambda ftype: ftype == category(),
+    IID: lambda ftype: ftype == category(),
+    LABEL: lambda ftype: ftype == int_() or ftype == float_(),
+    TIMESTAMP: lambda ftype: ftype == int_(),
+    TRAIN_MASK: lambda ftype: ftype == bool_(),
+    VAL_MASK: lambda ftype: ftype == bool_(),
+    TEST_MASK: lambda ftype: ftype == bool_(),
+    VAL_NEG_IIDS: lambda ftype: isinstance(ftype, FixedSizeListFtype)
+    and ftype.element_type == category(),
+    TEST_NEG_IIDS: lambda ftype: isinstance(ftype, FixedSizeListFtype)
+    and ftype.element_type == category(),
+}

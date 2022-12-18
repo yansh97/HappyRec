@@ -5,9 +5,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from happyrec.constants import IID, LABEL, TIMESTAMP, UID
 from happyrec.data import DataInfo, Frame
 from happyrec.data import field_types as ftp
-from happyrec.data.fields import IID, LABEL, TIMESTAMP, UID
 from happyrec.utils.logger import logger
 from happyrec.utils.preprocessing import convert_dataframe_to_frame, create_data
 
@@ -34,10 +34,10 @@ MOVIELENS_10M_DIR = Path("~/Datasets/preprocessed-data/movielens/10m").expanduse
 MOVIELENS_10M_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def clean_text(item: str | None) -> str | None:
-    if isinstance(item, str) and item.strip() != "":
+def clean_text(item: str | None) -> str:
+    if isinstance(item, str):
         return item.strip()
-    return None
+    return ""
 
 
 def str_to_cate_seq(item: str | None) -> np.ndarray:
@@ -84,7 +84,7 @@ def create_item_frame(item_file: Path) -> Frame:
     return convert_dataframe_to_frame(
         {
             IID: ftp.category(),
-            "title": ftp.string(),
+            "title": ftp.text(),
             "genres": ftp.list_(ftp.category()),
             "movielens_id": ftp.category(),
         },
@@ -96,11 +96,11 @@ def preprocess() -> None:
     interaction_frame = create_interaction_frame(RAW_MOVIELENS_10M_DIR / "ratings.dat")
     item_frame = create_item_frame(RAW_MOVIELENS_10M_DIR / "movies.dat")
 
-    data = create_data(interaction_frame, None, item_frame)
+    data, category_info = create_data(interaction_frame, None, item_frame)
 
     print(data)
     data.info()
-    data.to_pickle(MOVIELENS_10M_DIR)
+    data.to_feather(MOVIELENS_10M_DIR)
 
     data_info = DataInfo.from_data_files(
         MOVIELENS_10M_DIR,
@@ -109,6 +109,8 @@ def preprocess() -> None:
         homepage=MOVIELENS_10M_HOMEPAGE,
     )
     data_info.to_json(MOVIELENS_10M_DIR)
+
+    category_info.to_json(MOVIELENS_10M_DIR)
 
 
 if __name__ == "__main__":
