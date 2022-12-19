@@ -20,17 +20,6 @@ from .field_types import (
     category,
 )
 
-
-def assert_not_splitted(data: Data) -> None:
-    if data.has_phase_mask:
-        raise ValueError
-
-
-def assert_no_eval_negative_samples(data: Data) -> None:
-    if data.has_eval_negative_samples:
-        raise ValueError
-
-
 _array_contains: Callable[[set, np.ndarray], np.ndarray] = np.vectorize(
     operator.contains
 )
@@ -40,8 +29,10 @@ _array_contains: Callable[[set, np.ndarray], np.ndarray] = np.vectorize(
 class DataTransform:
     def __call__(self, data: Data) -> Data:
         logger.info("Transforming data by %s ...", repr(self))
-        assert_not_splitted(data)
-        assert_no_eval_negative_samples(data)
+        if data.has_phase_mask:
+            raise ValueError
+        if data.has_eval_negative_samples:
+            raise ValueError
         data = self.transform(data)
         data.validate()
         return data

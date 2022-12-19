@@ -6,13 +6,11 @@ from typing import Any, Callable
 
 import numpy as np
 
-from ..constants import DEFAULT_SEED
+from ..constants import DEFAULT_SEED, IID, UID
 from ..utils.asserts import assert_type
 from ..utils.logger import logger
 from .core import Data, Field, Frame, Phase, Source
 from .field_types import category, list_
-from .fields import IID, UID
-from .transforms import assert_no_eval_negative_samples
 
 
 @unique
@@ -45,11 +43,8 @@ class RecSampler(Sampler):
 
     rng: np.random.Generator = field(init=False, repr=False, hash=False, compare=False)
 
-    iids: np.ndarray | None = field(init=False, repr=False, hash=False, compare=False)
-    item_probs: np.ndarray | None = field(
-        init=False, repr=False, hash=False, compare=False
-    )
-    uid_to_index: dict[Any, int] | None = field(
+    num_items: int | None = field(init=False, repr=False, hash=False, compare=False)
+    item_pop_probs: np.ndarray | None = field(
         init=False, repr=False, hash=False, compare=False
     )
     user_iids_set: np.ndarray | None = field(
@@ -61,15 +56,16 @@ class RecSampler(Sampler):
         assert_type(self.repeatable, bool)
         assert_type(self.seed, int)
         self.rng = np.random.default_rng(self.seed)
-        self.iids = None
-        self.item_probs = None
-        self.uid_to_index = None
+        self.num_items = None
+        self.item_pop_probs = None
         self.user_iids_set = None
 
     def setup(self, data: Data, phase: Phase | None) -> None:
         if phase is None:
+            # use all interactions
             interaction_frame = data[Source.INTERACTION].loc_fields[[UID, IID]]
         else:
+            # use interactions from training phase to the given phase
             interaction_frame = data[Source.INTERACTION]
             interaction_mask = np.full(interaction_frame.num_elements, False)
             for p in Phase:
@@ -82,7 +78,7 @@ class RecSampler(Sampler):
         user_frame = data[Source.USER]
         item_frame = data[Source.ITEM]
 
-        self.iids = item_frame[IID].value
+        self.num_items = item_frame.num_elements
 
         if self.distribution == SampleDistribution.POPULARITY:
             item_count_dict = defaultdict(int)
@@ -93,16 +89,13 @@ class RecSampler(Sampler):
             item_counts = np.vectorize(operator.getitem)(
                 item_count_dict, item_frame[IID].value
             )
-            self.item_probs = item_counts / interaction_frame.num_elements
+            self.item_pop_probs = item_counts / interaction_frame.num_elements
 
         if not self.repeatable:
-            self.uid_to_index = dict(
-                zip(user_frame[UID].value, range(user_frame.num_elements))
-            )
             iids_set_dict: dict[Any, set] = defaultdict(set)
             for uid, frame in interaction_frame.groupby(by=UID):
                 iids_set = set(frame[IID].value)
-                if len(iids_set) == len(self.iids):
+                if len(iids_set) == self.num_items:
                     raise ValueError
                 iids_set_dict[uid] = iids_set
             self.user_iids_set = np.vectorize(operator.getitem)(
@@ -110,31 +103,29 @@ class RecSampler(Sampler):
             )
 
     def sample_iids(self, size: int) -> np.ndarray:
-        if self.iids is None:
+        if self.num_items is None:
             raise ValueError
-        return self.rng.choice(self.iids, size=size, replace=True, p=self.item_probs)
+        return self.rng.choice(
+            self.num_items, size=size, replace=True, p=self.item_pop_probs
+        )
 
     def sample_iids_by_uids(self, uids: np.ndarray, size: int) -> np.ndarray:
-        if self.iids is None or uids.ndim != 1:
+        if self.num_items is None or uids.ndim != 1:
             raise ValueError
 
         if self.repeatable:
             return self.sample_iids(len(uids) * size).reshape(-1, size)  # (U, S)
 
-        if self.uid_to_index is None or self.user_iids_set is None:
+        if self.user_iids_set is None:
             raise ValueError
 
         _array_contains: Callable[[np.ndarray, np.ndarray], np.ndarray] = np.vectorize(
             operator.contains
         )
 
-        uid_indices = np.vectorize(operator.getitem)(self.uid_to_index, uids)  # (U,)
-        uid_indices = uid_indices.repeat(size)  # (U*S,)
-
-        iids_set: np.ndarray = self.user_iids_set[uid_indices]  # (U*S,)
-        illegal_indices = np.arange(len(iids_set))
+        iids_set: np.ndarray = self.user_iids_set[uids.repeat(size)]  # (U*S,)
         iids = self.sample_iids(len(iids_set))  # (U*S,)
-        illegal_indices = illegal_indices[_array_contains(iids_set, iids)]  # (N,)
+        illegal_indices = np.arange(len(iids))[_array_contains(iids_set, iids)]  # (N,)
         while len(illegal_indices) > 0:
             iids[illegal_indices] = self.sample_iids(len(illegal_indices))  # (N,)
             illegal_mask = _array_contains(
@@ -158,7 +149,10 @@ class EvalNegativeSampler:
 
     def __call__(self, data: Data) -> Data:
         logger.info("Sampling evaluation negative items by %s ...", repr(self))
-        assert_no_eval_negative_samples(data)
+        if not data.has_phase_mask:
+            raise ValueError
+        if data.has_eval_negative_samples:
+            raise ValueError
         data = self.sample(data)
         data.validate()
         return data

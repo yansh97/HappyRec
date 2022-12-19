@@ -7,15 +7,16 @@ from ..utils.asserts import assert_type
 from ..utils.logger import logger
 from .core import Data, Field, Frame, Phase, Source
 from .field_types import bool_, int_
-from .transforms import assert_no_eval_negative_samples, assert_not_splitted
 
 
 @dataclass(frozen=True, slots=True)
 class Splitter:
     def __call__(self, data: Data) -> Data:
         logger.info("Splitting data by %s ...", repr(self))
-        assert_not_splitted(data)
-        assert_no_eval_negative_samples(data)
+        if data.has_phase_mask:
+            raise ValueError
+        if data.has_eval_negative_samples:
+            raise ValueError
         data = self.split(data)
         data.validate()
         return data
