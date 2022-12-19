@@ -2,12 +2,11 @@ from dataclasses import KW_ONLY, dataclass, field
 
 import numpy as np
 
-from ..constants import DEFAULT_SEED
+from ..constants import DEFAULT_SEED, LABEL, TIMESTAMP, UID
 from ..utils.asserts import assert_type
 from ..utils.logger import logger
 from .core import Data, Field, Frame, Phase, Source
 from .field_types import bool_, int_
-from .fields import LABEL, TIMESTAMP, UID
 from .transforms import assert_no_eval_negative_samples, assert_not_splitted
 
 
@@ -64,7 +63,7 @@ class RecSplitter(Splitter):
             index_frame = index_frame.loc_elements[perm_indices]
 
         if self.group_by_uid:
-            index_groups = [
+            index_groups: list[np.ndarray] = [
                 group["index"].value for _, group in index_frame.groupby(by=UID)
             ]
         else:
