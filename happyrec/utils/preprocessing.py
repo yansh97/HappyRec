@@ -26,7 +26,7 @@ from ..data.transforms import (
     Compose,
     DowncastDtype,
     FactorizeCategoryFields,
-    FilterByUnusedUIDsAndIIDs,
+    RemoveInteractionsWithInvalidUsersOrItems,
 )
 from .asserts import assert_never_type
 from .logger import logger
@@ -168,9 +168,11 @@ def create_data(
         item_frame = create_default_item_frame(interaction_frame)
 
     data = Data.from_frames(interaction_frame, user_frame, item_frame)
-    factorizer = FactorizeCategoryFields(CategoryInfo())
+    factorizer = FactorizeCategoryFields(
+        remove_unused_user_and_item=True, category_info=CategoryInfo()
+    )
     transforms = Compose.from_transforms(
-        FilterByUnusedUIDsAndIIDs(),
+        RemoveInteractionsWithInvalidUsersOrItems(),
         factorizer,
         DowncastDtype(),
     )

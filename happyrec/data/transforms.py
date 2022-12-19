@@ -68,6 +68,12 @@ class Compose(DataTransform):
 
 
 @dataclass(frozen=True, slots=True)
+class DowncastDtype(DataTransform):
+    def transform(self, data: Data) -> Data:
+        return data.downcast()
+
+
+@dataclass(frozen=True, slots=True)
 class RemoveNegativeInteractions(DataTransform):
     def transform(self, data: Data) -> Data:
         interaction_frame = data[Source.INTERACTION]
@@ -116,15 +122,13 @@ class RemoveDuplicateInteractions(DataTransform):
 
 
 @dataclass(frozen=True, slots=True)
-class FilterByUnusedUIDsAndIIDs(DataTransform):
+class RemoveInteractionsWithInvalidUsersOrItems(DataTransform):
     def transform(self, data: Data) -> Data:
         interaction_frame = data[Source.INTERACTION]
-        user_frame = data[Source.USER]
-        item_frame = data[Source.ITEM]
 
-        uid_set = set(user_frame[UID].value)
+        uid_set = set(data[Source.USER][UID].value)
         uid_mask = _array_contains(uid_set, interaction_frame[UID].value)
-        iid_set = set(item_frame[IID].value)
+        iid_set = set(data[Source.ITEM][IID].value)
         iid_mask = _array_contains(iid_set, interaction_frame[IID].value)
         interaction_mask = uid_mask & iid_mask
         interaction_frame = interaction_frame.loc_elements[interaction_mask]
@@ -134,21 +138,7 @@ class FilterByUnusedUIDsAndIIDs(DataTransform):
             interaction_frame.num_elements,
         )
 
-        uid_set = set(interaction_frame[UID].value)
-        user_mask = _array_contains(uid_set, user_frame[UID].value)
-        user_frame = user_frame.loc_elements[user_mask]
-        logger.debug(
-            "  Filtered users: %d -> %d", len(user_mask), user_frame.num_elements
-        )
-
-        iid_set = set(interaction_frame[IID].value)
-        item_mask = _array_contains(iid_set, item_frame[IID].value)
-        item_frame = item_frame.loc_elements[item_mask]
-        logger.debug(
-            "  Filtered items: %d -> %d", len(item_mask), item_frame.num_elements
-        )
-
-        return Data.from_frames(interaction_frame, user_frame, item_frame)
+        return Data.from_frames(interaction_frame, data[Source.USER], data[Source.ITEM])
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,18 +204,34 @@ class FilterKCoreInteractions(DataTransform):
 
 
 @dataclass(frozen=True, slots=True)
-class DowncastDtype(DataTransform):
-    def transform(self, data: Data) -> Data:
-        return data.downcast()
-
-
-@dataclass(frozen=True, slots=True)
 class FactorizeCategoryFields(DataTransform):
+    remove_unused_user_and_item: bool = True
     category_info: CategoryInfo | None = None
 
     def __post_init__(self) -> None:
+        assert_type(self.remove_unused_user_and_item, bool)
         if self.category_info is not None:
             assert_type(self.category_info, CategoryInfo)
+
+    def _remove_unused_user_and_item(self, data: Data) -> Data:
+        user_frame = data[Source.USER]
+        item_frame = data[Source.ITEM]
+
+        uid_set = set(data[Source.INTERACTION][UID].value)
+        user_mask = _array_contains(uid_set, user_frame[UID].value)
+        user_frame = user_frame.loc_elements[user_mask]
+        logger.debug(
+            "  Filtered users: %d -> %d", len(user_mask), user_frame.num_elements
+        )
+
+        iid_set = set(data[Source.INTERACTION][IID].value)
+        item_mask = _array_contains(iid_set, item_frame[IID].value)
+        item_frame = item_frame.loc_elements[item_mask]
+        logger.debug(
+            "  Filtered items: %d -> %d", len(item_mask), item_frame.num_elements
+        )
+
+        return Data.from_frames(data[Source.INTERACTION], user_frame, item_frame)
 
     def _factorize_array(self, array: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         unique_value, factorized_value = np.unique(array, return_inverse=True)
@@ -235,6 +241,7 @@ class FactorizeCategoryFields(DataTransform):
         ftype = cast(ScalarFtype, field.ftype)
         if not isinstance(ftype.element_type, CategoryEtype):
             return field
+        logger.debug("  Factorizing field %s ...", field_name)
         unique_value, factorized_value = self._factorize_array(field.value)
         if self.category_info is not None:
             self.category_info.update(field_name, unique_value)
@@ -244,6 +251,7 @@ class FactorizeCategoryFields(DataTransform):
         ftype = cast(FixedSizeListFtype, field.ftype)
         if not isinstance(ftype.element_type, CategoryEtype):
             return field
+        logger.debug("  Factorizing field %s ...", field_name)
         flat_value = field.value.reshape(-1)
         unique_value, factorized_flat_value = self._factorize_array(flat_value)
         factorized_value = factorized_flat_value.reshape(field.value.shape)
@@ -255,6 +263,7 @@ class FactorizeCategoryFields(DataTransform):
         ftype = cast(ListFtype, field.ftype)
         if not isinstance(ftype.element_type, CategoryEtype):
             return field
+        logger.debug("  Factorizing field %s ...", field_name)
         flat_value = np.concatenate(field.value)
         unique_value, factorized_flat_value = self._factorize_array(flat_value)
         sections = np.vectorize(len)(field.value).cumsum()[:-1].tolist()
@@ -282,7 +291,7 @@ class FactorizeCategoryFields(DataTransform):
         else:
             assert_never_type(ftype)
 
-    def transform(self, data: Data) -> Data:
+    def _factorize_category_fields(self, data: Data) -> Data:
         interaction_frame = data[Source.INTERACTION]
         user_frame = data[Source.USER]
         item_frame = data[Source.ITEM]
@@ -292,7 +301,6 @@ class FactorizeCategoryFields(DataTransform):
         factorized_item_fields = {}
 
         # convert uid fields and iid fields
-        logger.debug("  Factorizing UIDs ...")
         uid_field = Field(
             category(),
             np.concatenate([interaction_frame[UID].value, user_frame[UID].value]),
@@ -305,7 +313,6 @@ class FactorizeCategoryFields(DataTransform):
             interaction_frame.num_elements :
         ]
 
-        logger.debug("  Factorizing IIDs ...")
         iid_field = Field(
             category(),
             np.concatenate([interaction_frame[IID].value, item_frame[IID].value]),
@@ -330,7 +337,6 @@ class FactorizeCategoryFields(DataTransform):
             for name, field in frame.items():
                 if name in (UID, IID):
                     continue
-                logger.debug("  Factorizing field %s ...", name)
                 factorized_frame[name] = self._factorize_field(name, field)
 
         return Data.from_frames(
@@ -338,3 +344,9 @@ class FactorizeCategoryFields(DataTransform):
             Frame(factorized_user_fields),
             Frame(factorized_item_fields),
         )
+
+    def transform(self, data: Data) -> Data:
+        if self.remove_unused_user_and_item:
+            data = self._remove_unused_user_and_item(data)
+        data = self._factorize_category_fields(data)
+        return data
