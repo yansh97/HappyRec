@@ -26,12 +26,7 @@ from ..constants import (
 )
 from ..utils.asserts import assert_never_type, assert_type, is_typed_dict, is_typed_list
 from ..utils.logger import logger
-from .field_types import (
-    _BASE_FIELD_CHECKER,
-    FieldType,
-    _convert_pa_type_to_ftype,
-    category,
-)
+from .ftypes import _BASE_FIELD_CHECKER, FieldType, _convert_pa_type_to_ftype, category
 
 
 @dataclass(eq=False, frozen=True, slots=True)

@@ -6,7 +6,7 @@ from ..constants import DEFAULT_SEED, LABEL, TIMESTAMP, UID
 from ..utils.asserts import assert_type
 from ..utils.logger import logger
 from .core import Data, Field, Frame, Phase, Source
-from .field_types import bool_, int_
+from .ftypes import bool_, int_
 
 
 @dataclass(frozen=True, slots=True)

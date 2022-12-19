@@ -9,7 +9,7 @@ from ..utils.asserts import assert_never_type, assert_type, is_typed_list
 from ..utils.logger import logger
 from .core import Data, Field, Frame, Source
 from .data_info import CategoryInfo
-from .field_types import (
+from .ftypes import (
     CategoryEtype,
     FieldType,
     FixedSizeListFtype,

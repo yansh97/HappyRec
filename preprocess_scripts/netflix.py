@@ -6,7 +6,7 @@ from rich.progress import track
 
 from happyrec.constants import IID, LABEL, TIMESTAMP, UID
 from happyrec.data import DataInfo, Frame
-from happyrec.data import field_types as ftp
+from happyrec.data import ftypes as ftp
 from happyrec.utils.logger import logger
 from happyrec.utils.preprocessing import convert_dataframe_to_frame, create_data
 

@@ -14,7 +14,7 @@ from rich.progress import track
 
 from ..constants import IID, UID
 from ..data import CategoryInfo, Data, Field, FieldType, Frame
-from ..data.field_types import (
+from ..data.ftypes import (
     FixedSizeListFtype,
     ImageFtype,
     ListFtype,
