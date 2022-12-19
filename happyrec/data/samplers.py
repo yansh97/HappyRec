@@ -43,7 +43,7 @@ class RecSampler(Sampler):
 
     rng: np.random.Generator = field(init=False, repr=False, hash=False, compare=False)
 
-    num_items: int | None = field(init=False, repr=False, hash=False, compare=False)
+    iids: np.ndarray | None = field(init=False, repr=False, hash=False, compare=False)
     item_pop_probs: np.ndarray | None = field(
         init=False, repr=False, hash=False, compare=False
     )
@@ -56,7 +56,7 @@ class RecSampler(Sampler):
         assert_type(self.repeatable, bool)
         assert_type(self.seed, int)
         self.rng = np.random.default_rng(self.seed)
-        self.num_items = None
+        self.iids = None
         self.item_pop_probs = None
         self.user_iids_set = None
 
@@ -78,7 +78,7 @@ class RecSampler(Sampler):
         user_frame = data[Source.USER]
         item_frame = data[Source.ITEM]
 
-        self.num_items = item_frame.num_elements
+        self.iids = item_frame[IID].value
 
         if self.distribution == SampleDistribution.POPULARITY:
             item_count_dict = defaultdict(int)
@@ -95,7 +95,7 @@ class RecSampler(Sampler):
             iids_set_dict: dict[Any, set] = defaultdict(set)
             for uid, frame in interaction_frame.groupby(by=UID):
                 iids_set = set(frame[IID].value)
-                if len(iids_set) == self.num_items:
+                if len(iids_set) == len(self.iids):
                     raise ValueError
                 iids_set_dict[uid] = iids_set
             self.user_iids_set = np.vectorize(operator.getitem)(
@@ -103,14 +103,14 @@ class RecSampler(Sampler):
             )
 
     def sample_iids(self, size: int) -> np.ndarray:
-        if self.num_items is None:
+        if self.iids is None:
             raise ValueError
         return self.rng.choice(
-            self.num_items, size=size, replace=True, p=self.item_pop_probs
+            self.iids, size=size, replace=True, p=self.item_pop_probs
         )
 
     def sample_iids_by_uids(self, uids: np.ndarray, size: int) -> np.ndarray:
-        if self.num_items is None or uids.ndim != 1:
+        if self.iids is None or uids.ndim != 1:
             raise ValueError
 
         if self.repeatable:

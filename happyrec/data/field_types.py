@@ -202,10 +202,10 @@ class FixedSizeListFtype(FieldType):
     def _to_pa_array(self, value: np.ndarray) -> pa.Array:
         pa_etype = self.element_type._convert_dtype_to_pa_type(self._dtype(value))
         pa_type = pa.list_(pa_etype, self.length)
-        return pa.FixedSizeListArray.from_arrays(value, type=pa_type)
+        return pa.FixedSizeListArray.from_arrays(value.reshape(-1), type=pa_type)
 
     def _from_pa_array(self, pa_array: pa.Array) -> np.ndarray:
-        array = pa_array.flatten().to_numpy()
+        array = pa_array.combine_chunks().flatten().to_numpy()
         return array.reshape(-1, self.length)
 
 
@@ -496,7 +496,7 @@ _BASE_FIELD_CHECKER: dict[str, Callable[[FieldType], bool]] = {
     VAL_MASK: lambda ftype: ftype == bool_(),
     TEST_MASK: lambda ftype: ftype == bool_(),
     VAL_NEG_IIDS: lambda ftype: isinstance(ftype, FixedSizeListFtype)
-    and ftype.element_type == category(),
+    and isinstance(ftype.element_type, CategoryEtype),
     TEST_NEG_IIDS: lambda ftype: isinstance(ftype, FixedSizeListFtype)
-    and ftype.element_type == category(),
+    and isinstance(ftype.element_type, CategoryEtype),
 }
