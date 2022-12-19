@@ -11,25 +11,25 @@
         "interaction": {
             "uid": {
                 "field type": "scalar<category>",
-                "dtype": "int16",
+                "dtype": "uint16",
                 "shape": [
                     100000
                 ],
                 "non-null count": 100000,
-                "mean": null,
-                "min": 1,
-                "max": 943
+                "mean": 461.48475,
+                "min": 0,
+                "max": 942
             },
             "iid": {
                 "field type": "scalar<category>",
-                "dtype": "int16",
+                "dtype": "uint16",
                 "shape": [
                     100000
                 ],
                 "non-null count": 100000,
-                "mean": null,
-                "min": 1,
-                "max": 1682
+                "mean": 424.53013,
+                "min": 0,
+                "max": 1681
             },
             "label": {
                 "field type": "scalar<int>",
@@ -57,27 +57,27 @@
         "user": {
             "uid": {
                 "field type": "scalar<category>",
-                "dtype": "int16",
+                "dtype": "uint16",
                 "shape": [
                     943
                 ],
                 "non-null count": 943,
-                "mean": null,
-                "min": 1,
-                "max": 943
+                "mean": 471.0,
+                "min": 0,
+                "max": 942
             }
         },
         "item": {
             "iid": {
                 "field type": "scalar<category>",
-                "dtype": "int16",
+                "dtype": "uint16",
                 "shape": [
                     1682
                 ],
                 "non-null count": 1682,
-                "mean": null,
-                "min": 1,
-                "max": 1682
+                "mean": 840.5,
+                "min": 0,
+                "max": 1681
             }
         }
     },
@@ -97,41 +97,41 @@
             },
             "gender": {
                 "field type": "scalar<category>",
-                "dtype": "object",
+                "dtype": "uint8",
                 "shape": [
                     943
                 ],
                 "non-null count": 943,
-                "mean": null,
-                "min": "F",
-                "max": "M"
+                "mean": 0.7104984093319194,
+                "min": 0,
+                "max": 1
             },
             "occupation": {
                 "field type": "scalar<category>",
-                "dtype": "object",
+                "dtype": "uint8",
                 "shape": [
                     943
                 ],
                 "non-null count": 943,
-                "mean": null,
-                "min": "administrator",
-                "max": "writer"
+                "mean": 10.833510074231176,
+                "min": 0,
+                "max": 20
             },
             "zip_code": {
                 "field type": "scalar<category>",
-                "dtype": "object",
+                "dtype": "uint16",
                 "shape": [
                     943
                 ],
                 "non-null count": 943,
-                "mean": null,
-                "min": "00000",
-                "max": "Y1A6B"
+                "mean": 396.28738069989396,
+                "min": 0,
+                "max": 794
             }
         },
         "item": {
             "title": {
-                "field type": "scalar<string>",
+                "field type": "text",
                 "dtype": "object",
                 "shape": [
                     1682
@@ -142,7 +142,7 @@
                 "max": null
             },
             "release_date": {
-                "field type": "scalar<string>",
+                "field type": "text",
                 "dtype": "object",
                 "shape": [
                     1682
@@ -154,7 +154,7 @@
             },
             "genres": {
                 "field type": "list<category>",
-                "dtype": "object",
+                "dtype": "uint8",
                 "shape": [
                     1682,
                     [
@@ -164,29 +164,9 @@
                 ],
                 "non-null count": 1682,
                 "mean": null,
-                "min": "Action",
-                "max": "unknown"
+                "min": 0,
+                "max": 18
             }
         }
-    },
-    "files_size": {
-        "interaction": 900632,
-        "user": 14374,
-        "item": 124547
-    },
-    "files_checksum": {
-        "interaction": "adb87849921c9206b239d09231e01ee40d0a30a9a3ed1fcf1fe988dba4aa9742",
-        "user": "db8c30d0d07c4af29dfd4b65d5b75de7b138372de8b542ba6def3815a5403666",
-        "item": "a1ab881a12db0255a381e4052c3358c9ed656c900d7ed4e4ebb97c4abe4b7341"
-    },
-    "compressed_files_size": {
-        "interaction": 248272,
-        "user": 6220,
-        "item": 26048
-    },
-    "compressed_files_checksum": {
-        "interaction": "c20f7aedf7b0362b23374411d4be10746ade62c294d5351391a1f03a2ba6dec6",
-        "user": "c39d8429a091e872289d7aa1d416b244ccd72bf8d6522b38b4ffe67df9e50f64",
-        "item": "9dca55d966eaf3a4328bf739bbcbb1c4870b5c10c160bed873d49c7b0d9801ab"
     }
 }
