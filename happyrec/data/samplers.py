@@ -36,6 +36,8 @@ class Sampler:
 
 @dataclass(slots=True)
 class RecSampler(Sampler):
+    """Sampler for general recommendation scenarios."""
+
     _: KW_ONLY
     distribution: SampleDistribution = SampleDistribution.UNIFORM
     repeatable: bool = False

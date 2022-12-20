@@ -27,6 +27,8 @@ class Splitter:
 
 @dataclass(frozen=True, slots=True)
 class RecSplitter(Splitter):
+    """Splitter for general recommendation scenarios."""
+
     _: KW_ONLY
     ignore_negative_interactions: bool
     order_by_time: bool
@@ -100,6 +102,8 @@ class RecSplitter(Splitter):
 
 @dataclass(frozen=True, slots=True)
 class RatioSplitter(RecSplitter):
+    """Splitter by ratio."""
+
     ratio: tuple[float, float, float]
     _: KW_ONLY
     ignore_negative_interactions: bool = False
@@ -129,6 +133,8 @@ class RatioSplitter(RecSplitter):
 
 @dataclass(frozen=True, slots=True)
 class LeaveOneOutSplitter(RecSplitter):
+    """Splitter by leave-one-out."""
+
     _: KW_ONLY
     ignore_negative_interactions: bool = True
     order_by_time: bool = True

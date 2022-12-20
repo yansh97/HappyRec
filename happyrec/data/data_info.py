@@ -106,6 +106,8 @@ class DataInfo:
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class CategoryInfo:
+    """Category information."""
+
     field_names: list[str] = field(default_factory=list)
     unique_values: dict[str, list[Any]] = field(default_factory=dict)
 
