@@ -4,36 +4,72 @@ happyrec.utils
 .. contents:: Contents
    :local:
 
-File Operations
----------------
+Assert Utilities
+----------------
+
+.. currentmodule:: happyrec.utils.asserts
+.. autosummary::
+
+   assert_type
+   assert_never_type
+   is_typed_list
+   is_typed_dict
+
+.. autofunction:: assert_type
+.. autofunction:: assert_never_type
+.. autofunction:: is_typed_list
+.. autofunction:: is_typed_dict
+
+File Utilities
+----------------
 
 .. currentmodule:: happyrec.utils.file
 .. autosummary::
 
-   compress
    decompress
    checksum
    download
 
-.. autofunction:: compress
 .. autofunction:: decompress
 .. autofunction:: checksum
 .. autofunction:: download
 
-Type Utilities
---------------
+Logging Utilities
+-----------------
 
-.. currentmodule:: happyrec.utils.type
+.. currentmodule:: happyrec.utils.logger
 .. autosummary::
 
-   IT
-   KT
-   VT
-   is_typed_sequence
-   is_typed_mapping
+   init_happyrec_logger
+   logger
 
-.. autodata:: IT
-.. autodata:: KT
-.. autodata:: VT
-.. autofunction:: is_typed_sequence
-.. autofunction:: is_typed_mapping
+.. autofunction:: init_happyrec_logger
+.. autodata:: logger
+
+Data Preprocessing Utilities
+----------------------------
+
+.. currentmodule:: happyrec.utils.preprocessing
+.. autosummary::
+
+   load_from_jsonline
+   load_from_dictline
+   convert_image_to_jpeg
+   convert_str_to_timestamp
+   parallelize
+   convert_dataframe_to_frame
+   create_default_user_frame
+   create_default_item_frame
+   create_data
+   compress
+
+.. autofunction:: load_from_jsonline
+.. autofunction:: load_from_dictline
+.. autofunction:: convert_image_to_jpeg
+.. autofunction:: convert_str_to_timestamp
+.. autofunction:: parallelize
+.. autofunction:: convert_dataframe_to_frame
+.. autofunction:: create_default_user_frame
+.. autofunction:: create_default_item_frame
+.. autofunction:: create_data
+.. autofunction:: compress

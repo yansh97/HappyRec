@@ -8,5 +8,8 @@ Welcome to HappyRec's documentation!
    modules/happyrec
    modules/happyrec.constants
    modules/happyrec.data
-   modules/happyrec.data.predefined_fields
+   modules/happyrec.data.ftypes
+   modules/happyrec.data.transforms
+   modules/happyrec.data.splitters
+   modules/happyrec.data.samplers
    modules/happyrec.utils

@@ -4,60 +4,44 @@ happyrec.data
 .. contents:: Contents
    :local:
 
-Field
------
+Type Classes
+------------
 
 .. currentmodule:: happyrec.data
 .. autosummary::
 
-   ScalarType
-   ItemType
+   ElementType
    FieldType
-   NumericType
-   CategoricalType
-   TextType
-   ImageType
-   ObjectType
-   Field
 
-.. autoclass:: ScalarType
-.. autoclass:: ItemType
+.. autoclass:: ElementType
 .. autoclass:: FieldType
-   :exclude-members: __init__
-.. autoclass:: NumericType
-   :exclude-members: __init__
-.. autoclass:: CategoricalType
-   :exclude-members: __init__
-.. autoclass:: TextType
-   :exclude-members: __init__
-.. autoclass:: ImageType
-   :exclude-members: __init__
-.. autoclass:: ObjectType
-   :exclude-members: __init__
-.. autoclass:: Field
-   :exclude-members: __init__
 
-Frame
------
-
-.. currentmodule:: happyrec.data
-.. autosummary::
-
-   Frame
-
-.. autoclass:: Frame
-
-Data
-----
+Core Classes
+------------
 
 .. currentmodule:: happyrec.data
 .. autosummary::
 
    Source
+   Phase
+   Field
+   Frame
    Data
-   DataInfo
 
 .. autoclass:: Source
+.. autoclass:: Phase
+.. autoclass:: Field
+.. autoclass:: Frame
 .. autoclass:: Data
+
+Info Classes
+------------
+
+.. currentmodule:: happyrec.data
+.. autosummary::
+
+   DataInfo
+   CategoryInfo
+
 .. autoclass:: DataInfo
-   :exclude-members: __init__
+.. autoclass:: CategoryInfo
